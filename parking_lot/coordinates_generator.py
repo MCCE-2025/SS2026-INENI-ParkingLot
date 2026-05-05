@@ -3,10 +3,19 @@ import numpy as np
 from colors import COLOR_WHITE
 from drawing_utils import draw_contours
 
+# Hotkey help shown in the upper-left of the marking window.
+_HOTKEY_LINES = [
+    "Click 4 corners to mark a spot",
+    "u: undo last spot",
+    "r: reset all spots",
+    "q: quit and save",
+]
+
 
 class CoordinatesGenerator:
     KEY_RESET = ord("r")
     KEY_QUIT = ord("q")
+    KEY_UNDO = ord("u")
 
     def __init__(self, image, output, color):
         self.output = output
@@ -15,15 +24,22 @@ class CoordinatesGenerator:
         # Accept either a path to an image file or an already-loaded numpy frame
         # (useful for grabbing a still from a webcam without writing to disk).
         if isinstance(image, np.ndarray):
-            self.image = image.copy()
+            self.original_image = image.copy()
             self.caption = "coordinates"
         else:
-            self.image = open_cv.imread(image).copy()
+            self.original_image = open_cv.imread(image).copy()
             self.caption = image
 
+        # Working canvas. Re-rendered from `original_image` whenever spots
+        # change (undo/reset), so we never need to "erase" pixels.
+        self.image = self.original_image.copy()
+        self._render_overlay()
+
         self.click_count = 0
-        self.ids = 0
+        # In-progress corners for the spot currently being clicked.
         self.coordinates = []
+        # All completed spots: list of {"id": int, "coordinates": [[x,y], ...]}.
+        self.spots = []
 
         open_cv.namedWindow(self.caption, open_cv.WINDOW_GUI_EXPANDED)
         open_cv.setMouseCallback(self.caption, self.__mouse_callback)
@@ -34,24 +50,29 @@ class CoordinatesGenerator:
             key = open_cv.waitKey(0)
 
             if key == CoordinatesGenerator.KEY_RESET:
-                self.image = self.image.copy()
+                self.__reset()
+            elif key == CoordinatesGenerator.KEY_UNDO:
+                self.__undo()
             elif key == CoordinatesGenerator.KEY_QUIT:
                 break
         open_cv.destroyWindow(self.caption)
+        self.__write_output()
+
+    # ------------------------------------------------------------------
+    # Mouse handling
+    # ------------------------------------------------------------------
 
     def __mouse_callback(self, event, x, y, flags, params):
-
         if event == open_cv.EVENT_LBUTTONDOWN:
             self.coordinates.append((x, y))
             self.click_count += 1
 
             if self.click_count >= 4:
                 self.__handle_done()
-
             elif self.click_count > 1:
                 self.__handle_click_progress()
 
-        open_cv.imshow(self.caption, self.image)
+            open_cv.imshow(self.caption, self.image)
 
     def __handle_click_progress(self):
         open_cv.line(
@@ -59,6 +80,7 @@ class CoordinatesGenerator:
         )
 
     def __handle_done(self):
+        # Close the polygon visually.
         open_cv.line(
             self.image, self.coordinates[2], self.coordinates[3], self.color, 1
         )
@@ -66,39 +88,125 @@ class CoordinatesGenerator:
             self.image, self.coordinates[3], self.coordinates[0], self.color, 1
         )
 
-        self.click_count = 0
+        spot_id = len(self.spots)
+        spot_coords = [list(pt) for pt in self.coordinates]
+        self.spots.append({"id": spot_id, "coordinates": spot_coords})
 
-        coordinates = np.array(self.coordinates)
-
-        self.output.write(
-            "-\n          id: "
-            + str(self.ids)
-            + "\n          coordinates: ["
-            + "["
-            + str(self.coordinates[0][0])
-            + ","
-            + str(self.coordinates[0][1])
-            + "],"
-            + "["
-            + str(self.coordinates[1][0])
-            + ","
-            + str(self.coordinates[1][1])
-            + "],"
-            + "["
-            + str(self.coordinates[2][0])
-            + ","
-            + str(self.coordinates[2][1])
-            + "],"
-            + "["
-            + str(self.coordinates[3][0])
-            + ","
-            + str(self.coordinates[3][1])
-            + "]]\n"
+        draw_contours(
+            self.image,
+            np.array(self.coordinates),
+            str(spot_id + 1),
+            COLOR_WHITE,
         )
 
-        draw_contours(self.image, coordinates, str(self.ids + 1), COLOR_WHITE)
+        self.coordinates = []
+        self.click_count = 0
 
-        for i in range(0, 4):
-            self.coordinates.pop()
+    # ------------------------------------------------------------------
+    # Undo / reset
+    # ------------------------------------------------------------------
 
-        self.ids += 1
+    def __undo(self):
+        """Remove the most recently completed spot, or any in-progress clicks."""
+        if self.coordinates:
+            # Drop in-progress corners first.
+            self.coordinates = []
+            self.click_count = 0
+            self.__rerender()
+            return
+        if not self.spots:
+            return
+        self.spots.pop()
+        # Renumber so IDs stay consecutive.
+        for index, spot in enumerate(self.spots):
+            spot["id"] = index
+        self.__rerender()
+
+    def __reset(self):
+        """Clear all completed spots and any in-progress clicks."""
+        self.spots = []
+        self.coordinates = []
+        self.click_count = 0
+        self.__rerender()
+
+    def __rerender(self):
+        """Redraw the canvas from the original image plus current spots."""
+        self.image = self.original_image.copy()
+        self._render_overlay()
+        for spot in self.spots:
+            pts = np.array(spot["coordinates"])
+            # Outline + label, matching the look of __handle_done.
+            open_cv.line(self.image, tuple(pts[0]), tuple(pts[1]), (255, 0, 0), 1)
+            open_cv.line(self.image, tuple(pts[1]), tuple(pts[2]), (255, 0, 0), 1)
+            open_cv.line(self.image, tuple(pts[2]), tuple(pts[3]), self.color, 1)
+            open_cv.line(self.image, tuple(pts[3]), tuple(pts[0]), self.color, 1)
+            draw_contours(self.image, pts, str(spot["id"] + 1), COLOR_WHITE)
+        open_cv.imshow(self.caption, self.image)
+
+    # ------------------------------------------------------------------
+    # Overlay & output
+    # ------------------------------------------------------------------
+
+    def _render_overlay(self):
+        """Draw the hotkey legend in the top-left corner of `self.image`."""
+        font = open_cv.FONT_HERSHEY_SIMPLEX
+        scale = 0.45
+        thickness = 1
+        line_height = 18
+        padding = 6
+
+        # Measure the widest line so we can size the background box.
+        widths = [
+            open_cv.getTextSize(line, font, scale, thickness)[0][0]
+            for line in _HOTKEY_LINES
+        ]
+        box_w = max(widths) + 2 * padding
+        box_h = line_height * len(_HOTKEY_LINES) + 2 * padding
+
+        # Semi-transparent black background for legibility on any image.
+        overlay = self.image.copy()
+        open_cv.rectangle(overlay, (0, 0), (box_w, box_h), (0, 0, 0), thickness=-1)
+        open_cv.addWeighted(overlay, 0.55, self.image, 0.45, 0, dst=self.image)
+
+        for i, line in enumerate(_HOTKEY_LINES):
+            y = padding + line_height * (i + 1) - 4
+            open_cv.putText(
+                self.image,
+                line,
+                (padding, y),
+                font,
+                scale,
+                COLOR_WHITE,
+                thickness,
+                lineType=open_cv.LINE_AA,
+            )
+
+    def __write_output(self):
+        """Write all completed spots to the output file in YAML form."""
+        for spot in self.spots:
+            coords = spot["coordinates"]
+            self.output.write(
+                "-\n          id: "
+                + str(spot["id"])
+                + "\n          coordinates: ["
+                + "["
+                + str(coords[0][0])
+                + ","
+                + str(coords[0][1])
+                + "],"
+                + "["
+                + str(coords[1][0])
+                + ","
+                + str(coords[1][1])
+                + "],"
+                + "["
+                + str(coords[2][0])
+                + ","
+                + str(coords[2][1])
+                + "],"
+                + "["
+                + str(coords[3][0])
+                + ","
+                + str(coords[3][1])
+                + "]]\n"
+            )

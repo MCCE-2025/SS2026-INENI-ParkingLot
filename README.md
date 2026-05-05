@@ -87,10 +87,16 @@ Notes:
 
 Program flow is as follows:
 - User inputs a video source (file path or webcam device index), an optional still image to mark spots on, and a path for the output file of parking space coordinates.
-- User clicks 4 corners for each spot they want tracked. Presses 'q' when all desired spots are marked.
+- User clicks 4 corners for each spot they want tracked. The marking window shows a hotkey legend in the top-left corner:
+    - **left click × 4** — mark the corners of a spot
+    - **u** — undo the most recent spot (or any in-progress clicks)
+    - **r** — reset and clear *all* spots
+    - **q** — quit and save the current spots to the `--data` file
 - Video begins with the user provided boxes overlayed the video. Occupied spots initialized with red boxes, available spots with green.
     - Car leaves a space, the red box turns green.
     - Car drives into a free space, the green box turns red.
+
+Since spots are now only written to the `--data` file when you press `q`, you can experiment freely while marking and only the final layout is saved. To remove individual spots after the fact, edit the YAML file by hand or re-run with `--remark` to start over.
 
 The data on the entering and exiting of these cars can be used for a number of purposes: closest spot detection, analytics on parking lot usage, and for those counters outside of parking garages that tell you how many cars are on each level (to name a few).
 
