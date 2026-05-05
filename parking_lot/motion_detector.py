@@ -31,6 +31,10 @@ class MotionDetector:
 
     def detect_motion(self):
         capture = open_cv.VideoCapture(self.video)
+        if not capture.isOpened():
+            raise CaptureReadError(
+                "Could not open video source %r for detection." % (self.video,)
+            )
         # When self.video is an int we are reading from a webcam, which has no
         # seekable timeline, so skip frame seeking and CAP_PROP_POS_MSEC.
         is_webcam = isinstance(self.video, int)
@@ -38,6 +42,10 @@ class MotionDetector:
             apply_controls(capture, self.cam_controls)
             if self.auto_brightness is not None:
                 self.auto_brightness.attach(capture)
+            # Some UVC drivers (notably on Raspberry Pi) need a few reads
+            # before the first usable frame, especially right after the
+            # snapshot capture released and re-opened the device.
+            self._warmup_capture(capture)
         else:
             capture.set(open_cv.CAP_PROP_POS_FRAMES, self.start_frame)
         start_time = time.time()
@@ -76,15 +84,27 @@ class MotionDetector:
         statuses = [False] * len(coordinates_data)
         times = [None] * len(coordinates_data)
 
+        empty_frames = 0
+        max_empty_frames = 30  # ~1–2 seconds of dropped reads on a webcam
         while capture.isOpened():
             result, frame = capture.read()
-            if frame is None:
+            if not result or frame is None:
+                if is_webcam:
+                    # Webcams can drop a frame here and there; only bail
+                    # if it keeps happening, in which case the device
+                    # likely went away.
+                    empty_frames += 1
+                    if empty_frames >= max_empty_frames:
+                        logging.error(
+                            "Webcam returned %d empty frames in a row; giving up.",
+                            empty_frames,
+                        )
+                        break
+                    open_cv.waitKey(30)
+                    continue
+                # For a video file, an empty read means EOF.
                 break
-
-            if not result:
-                raise CaptureReadError(
-                    "Error reading video capture on frame %s" % str(frame)
-                )
+            empty_frames = 0
 
             if is_webcam and self.auto_brightness is not None:
                 self.auto_brightness.update(capture, frame, time.time())
@@ -171,6 +191,24 @@ class MotionDetector:
     @staticmethod
     def status_changed(coordinates_status, index, status):
         return status != coordinates_status[index]
+
+    @staticmethod
+    def _warmup_capture(capture, max_attempts=15, delay_ms=30):
+        """Read and discard frames until one comes through, or we give up."""
+        for attempt in range(max_attempts):
+            ok, frame = capture.read()
+            if ok and frame is not None:
+                logging.debug(
+                    "Webcam warm-up: usable frame after %d attempt(s).",
+                    attempt + 1,
+                )
+                return
+            open_cv.waitKey(delay_ms)
+        logging.warning(
+            "Webcam warm-up: no usable frame after %d attempts; "
+            "detection loop will keep trying.",
+            max_attempts,
+        )
 
 
 class CaptureReadError(Exception):
