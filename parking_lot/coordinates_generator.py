@@ -1,5 +1,6 @@
 import cv2 as open_cv
 import numpy as np
+import yaml
 from colors import COLOR_WHITE
 from drawing_utils import draw_contours
 
@@ -182,31 +183,28 @@ class CoordinatesGenerator:
             )
 
     def __write_output(self):
-        """Write all completed spots to the output file in YAML form."""
-        for spot in self.spots:
-            coords = spot["coordinates"]
-            self.output.write(
-                "-\n          id: "
-                + str(spot["id"])
-                + "\n          coordinates: ["
-                + "["
-                + str(coords[0][0])
-                + ","
-                + str(coords[0][1])
-                + "],"
-                + "["
-                + str(coords[1][0])
-                + ","
-                + str(coords[1][1])
-                + "],"
-                + "["
-                + str(coords[2][0])
-                + ","
-                + str(coords[2][1])
-                + "],"
-                + "["
-                + str(coords[3][0])
-                + ","
-                + str(coords[3][1])
-                + "]]\n"
-            )
+        """Write all completed spots to the output file in canonical YAML.
+
+        The top-level structure is a YAML block sequence (``- id: ...``),
+        with each spot's ``coordinates`` rendered as a single inline flow
+        list for readability. Example::
+
+            - id: 0
+              coordinates: [[120, 340], [260, 340], [260, 470], [120, 470]]
+        """
+        # Normalize the coordinates to plain Python ints so PyYAML doesn't
+        # tag them with !!python/object types.
+        spots = [
+            {
+                "id": int(spot["id"]),
+                "coordinates": [[int(x), int(y)] for x, y in spot["coordinates"]],
+            }
+            for spot in self.spots
+        ]
+
+        yaml.safe_dump(
+            spots,
+            self.output,
+            default_flow_style=None,
+            sort_keys=False,
+        )
