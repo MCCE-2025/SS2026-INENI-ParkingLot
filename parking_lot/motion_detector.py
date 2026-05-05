@@ -5,16 +5,26 @@ import cv2 as open_cv
 import numpy as np
 from colors import COLOR_BLUE, COLOR_GREEN, COLOR_WHITE
 from drawing_utils import draw_contours
+from webcam_controls import apply_controls
 
 
 class MotionDetector:
     LAPLACIAN = 1.4
     DETECT_DELAY = 1
 
-    def __init__(self, video, coordinates, start_frame):
+    def __init__(
+        self,
+        video,
+        coordinates,
+        start_frame,
+        cam_controls=None,
+        auto_brightness=None,
+    ):
         self.video = video
         self.coordinates_data = coordinates
         self.start_frame = start_frame
+        self.cam_controls = cam_controls or {}
+        self.auto_brightness = auto_brightness
         self.contours = []
         self.bounds = []
         self.mask = []
@@ -24,7 +34,11 @@ class MotionDetector:
         # When self.video is an int we are reading from a webcam, which has no
         # seekable timeline, so skip frame seeking and CAP_PROP_POS_MSEC.
         is_webcam = isinstance(self.video, int)
-        if not is_webcam:
+        if is_webcam:
+            apply_controls(capture, self.cam_controls)
+            if self.auto_brightness is not None:
+                self.auto_brightness.attach(capture)
+        else:
             capture.set(open_cv.CAP_PROP_POS_FRAMES, self.start_frame)
         start_time = time.time()
 
@@ -71,6 +85,9 @@ class MotionDetector:
                 raise CaptureReadError(
                     "Error reading video capture on frame %s" % str(frame)
                 )
+
+            if is_webcam and self.auto_brightness is not None:
+                self.auto_brightness.update(capture, frame, time.time())
 
             blurred = open_cv.GaussianBlur(frame.copy(), (5, 5), 3)
             grayed = open_cv.cvtColor(blurred, open_cv.COLOR_BGR2GRAY)

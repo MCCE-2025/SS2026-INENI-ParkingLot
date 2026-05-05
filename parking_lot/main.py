@@ -7,6 +7,12 @@ import yaml
 from colors import *
 from coordinates_generator import CoordinatesGenerator
 from motion_detector import MotionDetector
+from webcam_controls import (
+    CONTROLS,
+    AutoBrightnessController,
+    apply_controls,
+    has_any,
+)
 
 
 def main():
@@ -22,6 +28,29 @@ def main():
     # Allow --video to be either a file path or a webcam device index (e.g. 0).
     video_source = _coerce_source(args.video_file)
 
+    # Collect hardware webcam controls from the CLI (e.g. --brightness 192).
+    cam_controls = {name: getattr(args, name) for name, _, _ in CONTROLS}
+    if has_any(cam_controls) and not isinstance(video_source, int):
+        logging.warning(
+            "Webcam controls (--brightness etc.) only apply to webcams; "
+            "ignoring them for video file input."
+        )
+        cam_controls = {}
+
+    # Build the auto-brightness controller if requested.
+    auto_brightness = None
+    if args.auto_brightness:
+        if isinstance(video_source, int):
+            auto_brightness = AutoBrightnessController(
+                target=args.auto_brightness_target,
+                prop=args.auto_brightness_prop,
+            )
+        else:
+            logging.warning(
+                "--auto-brightness only applies to webcams; ignoring for "
+                "video file input."
+            )
+
     # Decide what (if anything) to use as the still image for marking spots.
     image_source = _resolve_image_source(
         args.image_file, video_source, data_file, remark
@@ -30,7 +59,7 @@ def main():
     if image_source is not None:
         # If image_source is an int, capture one frame live from that camera.
         if isinstance(image_source, int):
-            frame = _capture_frame(image_source)
+            frame = _capture_frame(image_source, cam_controls)
             if snapshot_path:
                 open_cv.imwrite(snapshot_path, frame)
                 logging.info("Saved webcam snapshot to %s", snapshot_path)
@@ -44,7 +73,13 @@ def main():
 
     with open(data_file, "r") as data:
         points = yaml.load(data)
-        detector = MotionDetector(video_source, points, int(start_frame))
+        detector = MotionDetector(
+            video_source,
+            points,
+            int(start_frame),
+            cam_controls=cam_controls,
+            auto_brightness=auto_brightness,
+        )
         detector.detect_motion()
 
 
@@ -96,14 +131,16 @@ def _resolve_image_source(image_arg, video_source, data_file, remark=False):
     return None
 
 
-def _capture_frame(device_index):
+def _capture_frame(device_index, cam_controls=None):
     """Grab a single frame from the given webcam device index."""
     capture = open_cv.VideoCapture(device_index)
     if not capture.isOpened():
         raise RuntimeError(
             "Could not open webcam device %d for snapshot." % device_index
         )
-    # Some webcams need a few reads before they return a usable frame.
+    apply_controls(capture, cam_controls or {})
+    # Some webcams need a few reads before they return a usable frame,
+    # especially after changing exposure/brightness controls.
     frame = None
     for _ in range(5):
         ok, frame = capture.read()
@@ -176,6 +213,93 @@ def parse_args():
             "Force the spot-marking step to run even if the coordinates "
             "file already exists. When --video is a webcam, a fresh "
             "snapshot is captured automatically."
+        ),
+    )
+
+    cam_group = parser.add_argument_group(
+        "webcam hardware controls",
+        "Set V4L2-style camera properties (equivalent to "
+        "`v4l2-ctl --set-ctrl=<name>=<value>` on Linux). Only applied "
+        "when --video is a webcam device index. Value ranges depend on "
+        "the camera/driver.",
+    )
+    cam_group.add_argument(
+        "--brightness",
+        dest="brightness",
+        type=float,
+        default=None,
+        help="Webcam brightness (e.g. 192).",
+    )
+    cam_group.add_argument(
+        "--contrast",
+        dest="contrast",
+        type=float,
+        default=None,
+        help="Webcam contrast.",
+    )
+    cam_group.add_argument(
+        "--saturation",
+        dest="saturation",
+        type=float,
+        default=None,
+        help="Webcam saturation.",
+    )
+    cam_group.add_argument(
+        "--gain",
+        dest="gain",
+        type=float,
+        default=None,
+        help="Webcam gain.",
+    )
+    cam_group.add_argument(
+        "--exposure",
+        dest="exposure",
+        type=float,
+        default=None,
+        help=(
+            "Webcam exposure (manual). Many V4L2 drivers require "
+            "--auto-exposure 1 first to take effect."
+        ),
+    )
+    cam_group.add_argument(
+        "--auto-exposure",
+        dest="auto_exposure",
+        type=float,
+        default=None,
+        help=(
+            "Auto-exposure mode. On most V4L2 UVC cameras, 3 = auto and "
+            "1 = manual; check `v4l2-ctl -L` for your specific device."
+        ),
+    )
+    cam_group.add_argument(
+        "--auto-brightness",
+        dest="auto_brightness",
+        action="store_true",
+        help=(
+            "Continuously adjust a hardware control (exposure, gain, or "
+            "brightness) to keep the mean frame luminance near "
+            "--auto-brightness-target. Pair with --auto-exposure 1 if "
+            "you want to drive --exposure manually."
+        ),
+    )
+    cam_group.add_argument(
+        "--auto-brightness-target",
+        dest="auto_brightness_target",
+        type=float,
+        default=128.0,
+        help=(
+            "Target mean luminance (0–255) for --auto-brightness. "
+            "Default: 128 (neutral midtone)."
+        ),
+    )
+    cam_group.add_argument(
+        "--auto-brightness-prop",
+        dest="auto_brightness_prop",
+        choices=["exposure", "gain", "brightness"],
+        default=None,
+        help=(
+            "Which hardware control --auto-brightness should drive. "
+            "Default: auto-detect the first one the camera accepts."
         ),
     )
 
