@@ -21,16 +21,23 @@ To run against a video file:
 python main.py --image images/parking_lot_1.png --data data/coordinates_1.yml --video videos/parking_lot_1.mp4 --start-frame 400
 ```
 
-To run against a connected webcam, pass the device index (an integer such as `0` for the default camera) to `--video`:
+To run against a connected webcam, pass the device index (an integer such as `0` for the default camera) to `--video`. The simplest case — just give the program a fresh data file path and a webcam, and it will automatically grab a frame for you to mark spots on, then start live detection:
+
 ```python
-# 1. Save a single frame from the webcam to use as the still image for marking spots
-python -c "import cv2; c=cv2.VideoCapture(0); ok,f=c.read(); c.release(); cv2.imwrite('images/webcam_snapshot.png', f)"
-
-# 2. Mark spots on that snapshot, then start live detection from webcam 0
-python main.py --image images/webcam_snapshot.png --data data/coordinates_webcam.yml --video 0
-
-# Subsequent runs can reuse the saved coordinates
 python main.py --data data/coordinates_webcam.yml --video 0
+```
+
+Useful extras:
+
+```python
+# Save the captured webcam frame to disk while marking, so you can reuse
+# it later (e.g. as --image images/webcam_snapshot.png against a video file).
+python main.py --snapshot images/webcam_snapshot.png \
+    --data data/coordinates_webcam.yml --video 0
+
+# Re-mark spots even though the coordinates file already exists. With a
+# webcam --video, this captures a fresh snapshot automatically.
+python main.py --remark --data data/coordinates_webcam.yml --video 0
 ```
 
 If you have multiple cameras connected, try `--video 1`, `--video 2`, etc. The `--start-frame` flag is ignored when reading from a webcam (live streams are not seekable).
