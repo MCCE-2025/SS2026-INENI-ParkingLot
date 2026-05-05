@@ -1,6 +1,5 @@
 import cv2 as open_cv
 import numpy as np
-
 from colors import COLOR_WHITE
 from drawing_utils import draw_contours
 
@@ -11,10 +10,17 @@ class CoordinatesGenerator:
 
     def __init__(self, image, output, color):
         self.output = output
-        self.caption = image
         self.color = color
 
-        self.image = open_cv.imread(image).copy()
+        # Accept either a path to an image file or an already-loaded numpy frame
+        # (useful for grabbing a still from a webcam without writing to disk).
+        if isinstance(image, np.ndarray):
+            self.image = image.copy()
+            self.caption = "coordinates"
+        else:
+            self.image = open_cv.imread(image).copy()
+            self.caption = image
+
         self.click_count = 0
         self.ids = 0
         self.coordinates = []
@@ -48,29 +54,47 @@ class CoordinatesGenerator:
         open_cv.imshow(self.caption, self.image)
 
     def __handle_click_progress(self):
-        open_cv.line(self.image, self.coordinates[-2], self.coordinates[-1], (255, 0, 0), 1)
+        open_cv.line(
+            self.image, self.coordinates[-2], self.coordinates[-1], (255, 0, 0), 1
+        )
 
     def __handle_done(self):
-        open_cv.line(self.image,
-                     self.coordinates[2],
-                     self.coordinates[3],
-                     self.color,
-                     1)
-        open_cv.line(self.image,
-                     self.coordinates[3],
-                     self.coordinates[0],
-                     self.color,
-                     1)
+        open_cv.line(
+            self.image, self.coordinates[2], self.coordinates[3], self.color, 1
+        )
+        open_cv.line(
+            self.image, self.coordinates[3], self.coordinates[0], self.color, 1
+        )
 
         self.click_count = 0
 
         coordinates = np.array(self.coordinates)
 
-        self.output.write("-\n          id: " + str(self.ids) + "\n          coordinates: [" +
-                          "[" + str(self.coordinates[0][0]) + "," + str(self.coordinates[0][1]) + "]," +
-                          "[" + str(self.coordinates[1][0]) + "," + str(self.coordinates[1][1]) + "]," +
-                          "[" + str(self.coordinates[2][0]) + "," + str(self.coordinates[2][1]) + "]," +
-                          "[" + str(self.coordinates[3][0]) + "," + str(self.coordinates[3][1]) + "]]\n")
+        self.output.write(
+            "-\n          id: "
+            + str(self.ids)
+            + "\n          coordinates: ["
+            + "["
+            + str(self.coordinates[0][0])
+            + ","
+            + str(self.coordinates[0][1])
+            + "],"
+            + "["
+            + str(self.coordinates[1][0])
+            + ","
+            + str(self.coordinates[1][1])
+            + "],"
+            + "["
+            + str(self.coordinates[2][0])
+            + ","
+            + str(self.coordinates[2][1])
+            + "],"
+            + "["
+            + str(self.coordinates[3][0])
+            + ","
+            + str(self.coordinates[3][1])
+            + "]]\n"
+        )
 
         draw_contours(self.image, coordinates, str(self.ids + 1), COLOR_WHITE)
 

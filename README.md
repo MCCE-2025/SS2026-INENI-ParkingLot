@@ -16,13 +16,27 @@ I'll start with an overview, then talk about my process, and end with some ideas
 
 The above link takes you to a video of the parking space detection program in action.
 
-To run:
+To run against a video file:
 ```python
 python main.py --image images/parking_lot_1.png --data data/coordinates_1.yml --video videos/parking_lot_1.mp4 --start-frame 400
 ```
 
+To run against a connected webcam, pass the device index (an integer such as `0` for the default camera) to `--video`:
+```python
+# 1. Save a single frame from the webcam to use as the still image for marking spots
+python -c "import cv2; c=cv2.VideoCapture(0); ok,f=c.read(); c.release(); cv2.imwrite('images/webcam_snapshot.png', f)"
+
+# 2. Mark spots on that snapshot, then start live detection from webcam 0
+python main.py --image images/webcam_snapshot.png --data data/coordinates_webcam.yml --video 0
+
+# Subsequent runs can reuse the saved coordinates
+python main.py --data data/coordinates_webcam.yml --video 0
+```
+
+If you have multiple cameras connected, try `--video 1`, `--video 2`, etc. The `--start-frame` flag is ignored when reading from a webcam (live streams are not seekable).
+
 Program flow is as follows:
-- User inputs file name for a video, a still image from the video, and a path for the output file of parking space coordinates.
+- User inputs a video source (file path or webcam device index), an optional still image to mark spots on, and a path for the output file of parking space coordinates.
 - User clicks 4 corners for each spot they want tracked. Presses 'q' when all desired spots are marked.
 - Video begins with the user provided boxes overlayed the video. Occupied spots initialized with red boxes, available spots with green.
     - Car leaves a space, the red box turns green.
@@ -133,7 +147,7 @@ The code for drawing the rectangles and motion detection is pretty generic. It's
 Check out [the code](https://github.com/olgarose/ParkingLot) for more!
 
 ## Future work
-- Hook up a webcam to a Raspberry Pi and have live parking monitoring at home!
+- Hook up a webcam to a Raspberry Pi and have live parking monitoring at home! (Live webcam input is now supported via `--video <device_index>` — see the Overview section.)
 - [Transform parking lot video to have overview perspective](http://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_geometric_transformations/py_geometric_transformations.html) (for clearer rectangles)
 - Experiment with [HOG descriptors](https://gurus.pyimagesearch.com/lesson-sample-histogram-of-oriented-gradients-and-car-logo-recognition/) to detect people or other objects of interest
 
