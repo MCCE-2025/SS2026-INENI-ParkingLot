@@ -72,7 +72,7 @@ def main():
             generator.generate()
 
     with open(data_file, "r") as data:
-        points = yaml.load(data)
+        points = yaml.safe_load(data)
         detector = MotionDetector(
             video_source,
             points,
