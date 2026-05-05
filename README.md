@@ -42,6 +42,49 @@ python main.py --remark --data data/coordinates_webcam.yml --video 0
 
 If you have multiple cameras connected, try `--video 1`, `--video 2`, etc. The `--start-frame` flag is ignored when reading from a webcam (live streams are not seekable).
 
+### Webcam hardware controls
+
+Live webcam feeds drift in brightness as lighting changes. Rather than software-correcting after the fact, you can set the camera's hardware controls directly — the same V4L2 controls you'd otherwise tweak with `v4l2-ctl --set-ctrl=brightness=192` on Linux. Under the hood this uses `cv2.VideoCapture.set(CAP_PROP_BRIGHTNESS, ...)` etc., which OpenCV routes to V4L2 on Linux, DirectShow on Windows, and AVFoundation on macOS.
+
+Available flags (all optional, all only apply when `--video` is a webcam):
+
+- `--brightness <value>`
+- `--contrast <value>`
+- `--saturation <value>`
+- `--gain <value>`
+- `--exposure <value>`
+- `--auto-exposure <value>` (on most V4L2 UVC cameras: `3` = auto, `1` = manual)
+
+Value ranges are camera/driver specific — run `v4l2-ctl -L` (Linux) or check the camera's docs for valid values. Example:
+
+```python
+# Pin brightness to 192 and switch to manual exposure at 250
+python main.py --data data/coordinates_webcam.yml --video 0 \
+    --auto-exposure 1 --exposure 250 --brightness 192
+```
+
+If the driver rejects a control (some cameras don't expose all of them), the program logs a warning and continues with the rest.
+
+#### Closed-loop auto-brightness
+
+If you don't want to pin a fixed value, `--auto-brightness` runs a simple feedback loop: it samples the mean luminance of each frame and nudges a hardware control up or down to keep it near `--auto-brightness-target` (default `128`, the neutral midtone). It auto-detects which control to drive (tries `exposure`, then `gain`, then `brightness`), or you can pin one with `--auto-brightness-prop`.
+
+```python
+# Default: target mean luminance 128, auto-detect which control to drive.
+python main.py --data data/coordinates_webcam.yml --video 0 \
+    --auto-exposure 1 --auto-brightness
+
+# Drive the brightness control specifically and aim for slightly brighter
+# (mean=160) than midtone.
+python main.py --data data/coordinates_webcam.yml --video 0 \
+    --auto-brightness --auto-brightness-prop brightness \
+    --auto-brightness-target 160
+```
+
+Notes:
+- On most V4L2 UVC cameras you'll want `--auto-exposure 1` (manual mode) before driving `exposure` yourself; otherwise the camera's own AE loop will fight ours.
+- The controller has a small dead-zone and rate-limits adjustments to roughly twice a second, which prevents oscillation but means it takes a few seconds to settle after a big lighting change.
+
 Program flow is as follows:
 - User inputs a video source (file path or webcam device index), an optional still image to mark spots on, and a path for the output file of parking space coordinates.
 - User clicks 4 corners for each spot they want tracked. Presses 'q' when all desired spots are marked.
