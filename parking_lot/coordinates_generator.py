@@ -18,7 +18,7 @@ class CoordinatesGenerator:
     KEY_QUIT = ord("q")
     KEY_UNDO = ord("u")
 
-    def __init__(self, image, output, color):
+    def __init__(self, image, output, color, window_name=None):
         self.output = output
         self.color = color
 
@@ -26,10 +26,16 @@ class CoordinatesGenerator:
         # (useful for grabbing a still from a webcam without writing to disk).
         if isinstance(image, np.ndarray):
             self.original_image = image.copy()
-            self.caption = "coordinates"
+            default_caption = "coordinates"
         else:
             self.original_image = open_cv.imread(image).copy()
-            self.caption = image
+            default_caption = image
+
+        # When ``window_name`` is provided we use that as the OpenCV window
+        # title; this lets the caller share a single window between the
+        # marking phase and the subsequent detection phase so the window
+        # doesn't close and reopen between them.
+        self.caption = window_name if window_name is not None else default_caption
 
         # Working canvas. Re-rendered from `original_image` whenever spots
         # change (undo/reset), so we never need to "erase" pixels.
@@ -45,7 +51,16 @@ class CoordinatesGenerator:
         open_cv.namedWindow(self.caption, open_cv.WINDOW_GUI_EXPANDED)
         open_cv.setMouseCallback(self.caption, self.__mouse_callback)
 
-    def generate(self):
+    def generate(self, keep_window_open=False):
+        """Run the interactive marking loop until the user presses ``q``.
+
+        Parameters
+        ----------
+        keep_window_open : bool
+            If True, leave the OpenCV window open after the user quits
+            so a subsequent stage (e.g. live detection) can reuse the
+            same window without it closing and reopening.
+        """
         while True:
             open_cv.imshow(self.caption, self.image)
             key = open_cv.waitKey(0)
@@ -56,7 +71,8 @@ class CoordinatesGenerator:
                 self.__undo()
             elif key == CoordinatesGenerator.KEY_QUIT:
                 break
-        open_cv.destroyWindow(self.caption)
+        if not keep_window_open:
+            open_cv.destroyWindow(self.caption)
         self.__write_output()
 
     # ------------------------------------------------------------------

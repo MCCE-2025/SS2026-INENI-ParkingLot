@@ -16,6 +16,10 @@ from webcam_controls import (
     has_any,
 )
 
+# Single OpenCV window title shared between the spot-marking phase and the
+# live detection phase, so the window stays put across the transition.
+WINDOW_NAME = "Parking Lot"
+
 
 def main():
     logging.basicConfig(level=logging.INFO)
@@ -70,8 +74,16 @@ def main():
             image_for_generator = image_source
 
         with open(data_file, "w+") as points:
-            generator = CoordinatesGenerator(image_for_generator, points, COLOR_RED)
-            generator.generate()
+            generator = CoordinatesGenerator(
+                image_for_generator,
+                points,
+                COLOR_RED,
+                window_name=WINDOW_NAME,
+            )
+            # Keep the marking window open so the detection phase below
+            # can render into the same window instead of spawning a new
+            # one (which would otherwise look like a close+reopen flash).
+            generator.generate(keep_window_open=True)
 
     with open(data_file, "r") as data:
         points = yaml.safe_load(data)
@@ -81,6 +93,7 @@ def main():
             int(start_frame),
             cam_controls=cam_controls,
             auto_brightness=auto_brightness,
+            window_name=WINDOW_NAME,
         )
         detector.detect_motion()
 
