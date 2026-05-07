@@ -16,27 +16,32 @@ I'll start with an overview, then talk about my process, and end with some ideas
 
 The above link takes you to a video of the parking space detection program in action.
 
-To run against a video file:
-```python
-python main.py --image images/parking_lot_1.png --data data/coordinates_1.yml --video videos/parking_lot_1.mp4 --start-frame 400
-```
+The marking frame always comes from `--video` itself — either a live webcam frame or a still extracted from a video file — so the layout you mark on is the same view detection will run against.
 
-To run against a connected webcam, pass the device index (an integer such as `0` for the default camera) to `--video`. The simplest case — just give the program a fresh data file path and a webcam, and it will automatically grab a frame for you to mark spots on, then start live detection:
+Against a connected webcam, pass the camera's device index (an integer such as `0` for the default camera) to `--video`. Just give the program a data file path and a webcam, and it will automatically grab a frame for you to mark spots on, then start live detection:
 
 ```python
 python main.py --data data/coordinates_webcam.yml --video 0
 ```
 
+Against a recorded video file, point `--video` at the file. If the data file is empty (or doesn't exist yet), a still is pulled from the video at `--start-frame` so you can mark spots on the same frame detection will start at:
+
+```python
+python main.py --data data/coordinates_1.yml --video videos/parking_lot_1.mp4 --start-frame 400
+```
+
+The marking step runs automatically when the `--data` file is missing or contains no spots (e.g. a freshly-created file or one whose contents are `[]`). Once spots are saved, subsequent runs skip marking and go straight to detection.
+
 Useful extras:
 
 ```python
-# Save the captured webcam frame to disk while marking, so you can reuse
-# it later (e.g. as --image images/webcam_snapshot.png against a video file).
-python main.py --snapshot images/webcam_snapshot.png \
+# Save the captured marking frame to disk, e.g. for debugging or as a
+# visual reference of how the spots were laid out.
+python main.py --snapshot images/snapshot.png \
     --data data/coordinates_webcam.yml --video 0
 
-# Re-mark spots even though the coordinates file already exists. With a
-# webcam --video, this captures a fresh snapshot automatically.
+# Re-mark spots even though the coordinates file already exists. A fresh
+# frame is captured from --video (webcam or file) automatically.
 python main.py --remark --data data/coordinates_webcam.yml --video 0
 ```
 
@@ -86,7 +91,7 @@ Notes:
 - The controller has a small dead-zone and rate-limits adjustments to roughly twice a second, which prevents oscillation but means it takes a few seconds to settle after a big lighting change.
 
 Program flow is as follows:
-- User inputs a video source (file path or webcam device index), an optional still image to mark spots on, and a path for the output file of parking space coordinates.
+- User inputs a video source (a webcam device index or a video file path) and a path for the output file of parking space coordinates. When the data file is empty, a still frame is pulled from that same video source for the user to mark spots on.
 - User clicks 4 corners for each spot they want tracked. The marking window shows a hotkey legend in the top-left corner:
     - **left click × 4** — mark the corners of a spot
     - **u** — undo the most recent spot (or any in-progress clicks)
