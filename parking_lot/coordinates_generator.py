@@ -22,20 +22,19 @@ class CoordinatesGenerator:
         self.output = output
         self.color = color
 
-        # Accept either a path to an image file or an already-loaded numpy frame
-        # (useful for grabbing a still from a webcam without writing to disk).
-        if isinstance(image, np.ndarray):
-            self.original_image = image.copy()
-            default_caption = "coordinates"
-        else:
-            self.original_image = open_cv.imread(image).copy()
-            default_caption = image
+        # The marking frame is always provided as an in-memory numpy array
+        # (captured live from the webcam by ``main.py``).
+        if not isinstance(image, np.ndarray):
+            raise TypeError(
+                "CoordinatesGenerator expects a numpy ndarray frame, got %r"
+                % type(image).__name__
+            )
+        self.original_image = image.copy()
 
-        # When ``window_name`` is provided we use that as the OpenCV window
-        # title; this lets the caller share a single window between the
-        # marking phase and the subsequent detection phase so the window
-        # doesn't close and reopen between them.
-        self.caption = window_name if window_name is not None else default_caption
+        # ``window_name`` becomes the OpenCV window title. Sharing a single
+        # window with the subsequent detection phase keeps the window from
+        # closing and reopening between phases.
+        self.caption = window_name if window_name is not None else "coordinates"
 
         # Working canvas. Re-rendered from `original_image` whenever spots
         # change (undo/reset), so we never need to "erase" pixels.

@@ -33,6 +33,7 @@ def main():
 
     # Allow --video to be either a file path or a webcam device index (e.g. 0).
     video_source = _coerce_source(args.video_file)
+    is_webcam = isinstance(video_source, int)
 
     # Collect hardware webcam controls from the CLI (e.g. --brightness 192).
     cam_controls = {name: getattr(args, name) for name, _, _ in CONTROLS}
@@ -57,25 +58,39 @@ def main():
                 "video file input."
             )
 
-    # Decide what (if anything) to use as the still image for marking spots.
-    image_source = _resolve_image_source(
-        args.image_file, video_source, data_file, remark
-    )
+    # Decide whether to run the spot-marking step. Marking happens when
+    # the data file has no spots yet, or when --remark is forced. The
+    # marking frame is always grabbed live from the webcam.
+    data_missing = _is_data_file_empty(data_file)
+    should_mark = data_missing or remark
 
-    if image_source is not None:
-        # If image_source is an int, capture one frame live from that camera.
-        if isinstance(image_source, int):
-            frame = _capture_frame(image_source, cam_controls)
-            if snapshot_path:
-                open_cv.imwrite(snapshot_path, frame)
-                logging.info("Saved webcam snapshot to %s", snapshot_path)
-            image_for_generator = frame
+    if should_mark:
+        action = "re-mark" if (remark and not data_missing) else "mark"
+        if is_webcam:
+            logging.info(
+                "%s: capturing a frame from webcam %d to %s spots.",
+                data_file,
+                video_source,
+                action,
+            )
+            frame = _capture_frame(video_source, cam_controls)
         else:
-            image_for_generator = image_source
+            logging.info(
+                "%s: extracting a still from video file %s (frame %s) to %s spots.",
+                data_file,
+                video_source,
+                start_frame,
+                action,
+            )
+            frame = _capture_frame_from_video(video_source, int(start_frame))
+
+        if snapshot_path:
+            open_cv.imwrite(snapshot_path, frame)
+            logging.info("Saved marking snapshot to %s", snapshot_path)
 
         with open(data_file, "w+") as points:
             generator = CoordinatesGenerator(
-                image_for_generator,
+                frame,
                 points,
                 COLOR_RED,
                 window_name=WINDOW_NAME,
@@ -107,43 +122,73 @@ def _coerce_source(value):
     return value
 
 
-def _resolve_image_source(image_arg, video_source, data_file, remark=False):
-    """Figure out where the still image for spot marking should come from.
+def _capture_frame_from_video(path, start_frame=1):
+    """Grab a single still frame from a video file for spot marking.
 
-    Priority:
-      1. Explicit --image argument (path or device index).
-      2. If --video is a webcam *and* the data file doesn't exist yet
-         (or --remark was passed), reuse the webcam to grab a snapshot.
-      3. Otherwise, no spot-marking step (reuse existing data file).
+    Seeks to ``start_frame`` (1-based, matching ``--start-frame``) so the
+    user marks spots on the same frame the detection loop will start at,
+    which keeps the layout aligned with what they actually see during
+    playback. Falls back to the first decodable frame if seeking fails.
     """
-    if image_arg is not None:
-        return _coerce_source(image_arg)
+    capture = open_cv.VideoCapture(path)
+    if not capture.isOpened():
+        raise RuntimeError("Could not open video file %r for marking." % path)
 
-    data_missing = not os.path.exists(data_file) or os.path.getsize(data_file) == 0
-    if isinstance(video_source, int) and (data_missing or remark):
-        if remark and not data_missing:
-            logging.info(
-                "--remark requested; capturing a frame from webcam %d to "
-                "re-mark spots (overwriting %s).",
-                video_source,
-                data_file,
-            )
-        else:
-            logging.info(
-                "No --image given and %s is empty; capturing a frame from "
-                "webcam %d to mark spots.",
-                data_file,
-                video_source,
-            )
-        return video_source
+    # ``CAP_PROP_POS_FRAMES`` is 0-based; the CLI's --start-frame is 1-based
+    # by historical convention, so subtract one (clamped to 0).
+    target = max(0, int(start_frame) - 1)
+    if target > 0:
+        capture.set(open_cv.CAP_PROP_POS_FRAMES, float(target))
 
-    if remark and not isinstance(video_source, int):
-        logging.warning(
-            "--remark only takes effect when --video is a webcam device "
-            "index; pass --image to re-mark spots from a file."
+    ok, frame = capture.read()
+    if not ok or frame is None:
+        # Seeking can fail on some containers/codecs; rewind and try again
+        # from the very beginning so we still get *something* to mark on.
+        capture.set(open_cv.CAP_PROP_POS_FRAMES, 0.0)
+        ok, frame = capture.read()
+
+    capture.release()
+
+    if not ok or frame is None:
+        raise RuntimeError(
+            "Could not read any frame from video file %r for marking." % path
         )
+    return frame
 
-    return None
+
+def _is_data_file_empty(data_file):
+    """Return True if the spots data file is missing or has no spots.
+
+    The file is considered "empty" if any of the following hold:
+
+    * it doesn't exist on disk,
+    * it has zero bytes,
+    * its YAML payload parses to ``None`` (e.g. blank file or only
+      comments),
+    * its YAML payload parses to an empty sequence (``[]``) or empty
+      mapping (``{}``),
+    * it fails to parse as YAML at all (treated as empty so the user
+      can re-mark instead of crashing later when we try to iterate it).
+    """
+    if not os.path.exists(data_file) or os.path.getsize(data_file) == 0:
+        return True
+    try:
+        with open(data_file, "r") as handle:
+            parsed = yaml.safe_load(handle)
+    except (OSError, yaml.YAMLError) as exc:
+        logging.warning(
+            "Could not parse %s as YAML (%s); treating it as empty.",
+            data_file,
+            exc,
+        )
+        return True
+    if parsed is None:
+        return True
+    # Both list and dict have a meaningful len(); anything else (e.g. a
+    # scalar) is unexpected and we'd rather re-mark than misinterpret.
+    if hasattr(parsed, "__len__"):
+        return len(parsed) == 0
+    return True
 
 
 def _capture_frame(
@@ -228,18 +273,6 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Generates Coordinates File")
 
     parser.add_argument(
-        "--image",
-        dest="image_file",
-        required=False,
-        help=(
-            "Image to generate coordinates on. Can be a file path or a "
-            "webcam device index (e.g. 0) to capture a snapshot live. "
-            "If omitted and --video is a webcam, a snapshot is captured "
-            "automatically when no coordinates file exists yet."
-        ),
-    )
-
-    parser.add_argument(
         "--video",
         dest="video_file",
         required=True,
@@ -271,7 +304,7 @@ def parse_args():
         default=None,
         help=(
             "Optional path to save the webcam snapshot used for marking "
-            "spots, so it can be reused later as --image."
+            "spots (e.g. for debugging or as a reference image)."
         ),
     )
 
