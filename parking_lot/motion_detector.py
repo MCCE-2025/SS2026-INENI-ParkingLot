@@ -19,12 +19,17 @@ class MotionDetector:
         start_frame,
         cam_controls=None,
         auto_brightness=None,
+        window_name=None,
     ):
         self.video = video
         self.coordinates_data = coordinates
         self.start_frame = start_frame
         self.cam_controls = cam_controls or {}
         self.auto_brightness = auto_brightness
+        # When provided, render into this existing window instead of one
+        # named after the video source. Lets callers reuse the marking
+        # window so it doesn't close and reopen between phases.
+        self.window_name = window_name if window_name is not None else str(video)
         self.contours = []
         self.bounds = []
         self.mask = []
@@ -152,7 +157,7 @@ class MotionDetector:
                     new_frame, coordinates, str(p["id"] + 1), COLOR_WHITE, color
                 )
 
-            open_cv.imshow(str(self.video), new_frame)
+            open_cv.imshow(self.window_name, new_frame)
             k = open_cv.waitKey(1)
             if k == ord("q"):
                 break
