@@ -3,9 +3,23 @@ import logging
 import os
 import time
 
-import cv2 as open_cv
-import numpy as np
-import yaml
+# Silence OpenCV's native (C++) log spam such as the harmless
+# "GStreamer: pipeline have not been created" warning that fires on the
+# first frame from some webcams on Linux. The env var must be set
+# *before* ``cv2`` is imported so the C++ side picks it up; the runtime
+# call below covers the case where ``cv2`` was already imported earlier.
+os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
+
+import cv2 as open_cv  # noqa: E402  (import after env var on purpose)
+import numpy as np  # noqa: E402
+import yaml  # noqa: E402
+
+try:
+    open_cv.utils.logging.setLogLevel(open_cv.utils.logging.LOG_LEVEL_ERROR)
+except AttributeError:
+    # Older OpenCV builds don't expose cv2.utils.logging; the env var
+    # above is enough on those.
+    pass
 from colors import *
 from coordinates_generator import CoordinatesGenerator
 from motion_detector import MotionDetector
