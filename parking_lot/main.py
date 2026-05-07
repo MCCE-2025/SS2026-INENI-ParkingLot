@@ -1,8 +1,10 @@
 import argparse
 import logging
 import os
+import time
 
 import cv2 as open_cv
+import numpy as np
 import yaml
 from colors import *
 from coordinates_generator import CoordinatesGenerator
@@ -131,23 +133,78 @@ def _resolve_image_source(image_arg, video_source, data_file, remark=False):
     return None
 
 
-def _capture_frame(device_index, cam_controls=None):
-    """Grab a single frame from the given webcam device index."""
+def _capture_frame(
+    device_index,
+    cam_controls=None,
+    warmup_frames=30,
+    min_mean_luminance=10.0,
+    max_attempts=60,
+    settle_seconds=0.5,
+):
+    """Grab a single frame from the given webcam device index.
+
+    Most webcams return solid-black (or near-black) frames for the first
+    handful of reads after being opened, especially when auto-exposure
+    has just been (re)engaged or hardware controls were changed. We
+    therefore:
+
+    1. Sleep briefly after applying controls so the driver can settle.
+    2. Discard at least ``warmup_frames`` reads.
+    3. Keep reading until we get a frame whose mean luminance is above
+       ``min_mean_luminance`` (i.e. not effectively black), up to
+       ``max_attempts`` total reads.
+    """
     capture = open_cv.VideoCapture(device_index)
     if not capture.isOpened():
         raise RuntimeError(
             "Could not open webcam device %d for snapshot." % device_index
         )
     apply_controls(capture, cam_controls or {})
-    # Some webcams need a few reads before they return a usable frame,
-    # especially after changing exposure/brightness controls.
+
+    # Give the driver a moment to apply controls and let auto-exposure
+    # start converging before we trust any frames.
+    if settle_seconds > 0:
+        time.sleep(settle_seconds)
+
     frame = None
-    for _ in range(5):
-        ok, frame = capture.read()
-        if ok and frame is not None:
+    last_frame = None
+    for attempt in range(max_attempts):
+        ok, current = capture.read()
+        if not ok or current is None:
+            continue
+        last_frame = current
+        # Always discard the first few reads as warm-up.
+        if attempt < warmup_frames:
+            continue
+        gray = open_cv.cvtColor(current, open_cv.COLOR_BGR2GRAY)
+        mean = float(np.mean(gray))
+        if mean >= min_mean_luminance:
+            frame = current
+            logging.info(
+                "Webcam snapshot captured after %d frames (mean luminance %.1f).",
+                attempt + 1,
+                mean,
+            )
             break
+        logging.debug(
+            "Discarding dark webcam frame %d (mean luminance %.1f < %.1f).",
+            attempt + 1,
+            mean,
+            min_mean_luminance,
+        )
+
     capture.release()
+
     if frame is None:
+        if last_frame is not None:
+            logging.warning(
+                "Webcam device %d only produced dark frames after %d attempts; "
+                "using the last one anyway. Try increasing brightness/exposure "
+                "or pointing the camera at a better-lit scene.",
+                device_index,
+                max_attempts,
+            )
+            return last_frame
         raise RuntimeError(
             "Could not read a frame from webcam device %d." % device_index
         )
