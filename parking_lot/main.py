@@ -123,6 +123,8 @@ def main():
             cam_controls=cam_controls,
             auto_brightness=auto_brightness,
             window_name=WINDOW_NAME,
+            laplacian=args.laplacian,
+            detect_delay=args.detect_delay,
         )
         detector.detect_motion()
 
@@ -418,6 +420,35 @@ def parse_args():
             "Which hardware control --auto-brightness should drive. "
             "Default: auto-detect the first one the camera accepts."
         ),
+    )
+
+    detection_group = parser.add_argument_group(
+        "detection tuning",
+        "Fine-tune the occupancy detection algorithm.",
+    )
+    detection_group.add_argument(
+        "--laplacian",
+        dest="laplacian",
+        type=float,
+        default=None,
+        help=(
+            "Laplacian threshold for occupancy detection. "
+            "Lower values make detection more sensitive (fewer edges needed "
+            "to count a spot as occupied). Default: %.1f."
+        )
+        % MotionDetector.LAPLACIAN,
+    )
+    detection_group.add_argument(
+        "--detect-delay",
+        dest="detect_delay",
+        type=float,
+        default=None,
+        help=(
+            "Seconds a status change must remain stable before it is "
+            "accepted. Higher values reduce flicker from shadows or "
+            "passing pedestrians. Default: %.1f."
+        )
+        % MotionDetector.DETECT_DELAY,
     )
 
     return parser.parse_args()
