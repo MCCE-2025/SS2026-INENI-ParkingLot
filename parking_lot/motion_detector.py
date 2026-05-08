@@ -20,6 +20,8 @@ class MotionDetector:
         cam_controls=None,
         auto_brightness=None,
         window_name=None,
+        laplacian=None,
+        detect_delay=None,
     ):
         self.video = video
         self.coordinates_data = coordinates
@@ -30,6 +32,12 @@ class MotionDetector:
         # named after the video source. Lets callers reuse the marking
         # window so it doesn't close and reopen between phases.
         self.window_name = window_name if window_name is not None else str(video)
+        self.laplacian_threshold = (
+            laplacian if laplacian is not None else MotionDetector.LAPLACIAN
+        )
+        self.detect_delay = (
+            detect_delay if detect_delay is not None else MotionDetector.DETECT_DELAY
+        )
         self.contours = []
         self.bounds = []
         self.mask = []
@@ -136,10 +144,7 @@ class MotionDetector:
                 if times[index] is not None and self.status_changed(
                     statuses, index, status
                 ):
-                    if (
-                        position_in_seconds - times[index]
-                        >= MotionDetector.DETECT_DELAY
-                    ):
+                    if position_in_seconds - times[index] >= self.detect_delay:
                         statuses[index] = status
                         times[index] = None
                     continue
@@ -179,7 +184,7 @@ class MotionDetector:
         coordinates[:, 1] = coordinates[:, 1] - rect[1]
 
         status = (
-            np.mean(np.abs(laplacian * self.mask[index])) < MotionDetector.LAPLACIAN
+            np.mean(np.abs(laplacian * self.mask[index])) < self.laplacian_threshold
         )
         logging.debug("status: %s", status)
 
