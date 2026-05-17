@@ -28,7 +28,8 @@ Original upstream: [olgarose/ParkingLot](https://github.com/olgarose/ParkingLot)
 │   ├── motion_detector.py   # Per-frame Laplacian occupancy loop
 │   ├── coordinates_generator.py  # Interactive spot marking (mouse)
 │   ├── iot_publisher.py     # AWS IoT MQTT + Device Shadow (optional)
-│   ├── simulator.py         # Synthetic events → IoTPublisher (no OpenCV)
+│   ├── dynamodb_publisher.py # Direct DynamoDB PutItem (simulator local sink)
+│   ├── simulator.py         # Synthetic events → IoT or DynamoDB (no OpenCV)
 │   ├── webcam_controls.py   # V4L2-style camera properties + auto-brightness
 │   ├── drawing_utils.py, colors.py
 │   ├── data/                # YAML spot coordinates (often gitignored via data/)
@@ -126,6 +127,7 @@ Never commit: `certs/`, `*.pem`, `*.key`, `*.crt`, `.venv/`, `infra/cdk.out/`, `
 - **Scope:** Only change files required by the task. Do not refactor unrelated OpenCV code.
 - **IoT optional:** `main.py` and `simulator.py` must run without `awsiotsdk` connectivity when `--iot-endpoint` is omitted (import of `iot_publisher` still loads the module; connection is lazy at `build_iot_publisher`).
 - **Shared IoT CLI:** Add or change `--iot-*` flags only in `iot_publisher.add_iot_args()`, not duplicated in `main.py` / `simulator.py`.
+- **Shared DynamoDB CLI:** Add or change `--dynamodb-*` flags only in `dynamodb_publisher.add_dynamodb_args()`, not duplicated in `simulator.py`.
 - **Policy parity:** IoT policy in CDK (`parking_lot_stack.py`) must stay aligned with `README.md` so console/manual and CDK paths behave the same.
 - **Tests:** `parking_lot/tests/` is minimal; prefer not to add heavy test harnesses unless asked.
 - **Commits:** Only commit when the user explicitly requests it.
@@ -138,14 +140,15 @@ Never commit: `certs/`, `*.pem`, `*.key`, `*.crt`, `.venv/`, `infra/cdk.out/`, `
 | Webcam black frames on Linux | `main.py` `_capture_frame`, `motion_detector._warmup_capture` |
 | IoT publish on state change | `motion_detector.py` after `statuses[index] = status` |
 | Cloud provisioning | `infra/parking_lot_cdk/parking_lot_stack.py` |
-| Test cloud without camera | `parking_lot/simulator.py` |
+| Test cloud without camera | `parking_lot/simulator.py` (`--sink iot`) |
+| Test DynamoDB without IoT | `parking_lot/simulator.py` (`--sink dynamodb`) |
 | Materialize device certs | `infra/scripts/fetch_certs.py` |
 
 ## Dependencies
 
 | Area | Install |
 |------|---------|
-| Device app | `uv sync` (repo root) — `opencv-python`, `numpy`, `PyYAML`, `awsiotsdk` |
+| Device app | `uv sync` (repo root) — `opencv-python`, `numpy`, `PyYAML`, `awsiotsdk`, `boto3` |
 | CDK / infra | `cd infra && uv sync --all-groups` |
 | CLI tools | AWS CLI (`aws configure`), Node.js + `npm install -g aws-cdk` |
 

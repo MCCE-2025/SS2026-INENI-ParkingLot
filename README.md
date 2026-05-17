@@ -425,6 +425,65 @@ uv run python simulator.py --script data/sim_events.yml \
 
 Subscribe to `parkinglot/#` in the IoT console MQTT test client while the simulator runs to confirm messages arrive.
 
+### Local DynamoDB sink (no IoT)
+
+To test the same event records the CDK IoT Topic Rule writes to `ParkingLotEvents`, without AWS IoT Core or device certificates, use `--sink dynamodb` and point at [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html):
+
+```bash
+docker run -d --name dynamodb-local -p 8000:8000 amazon/dynamodb-local
+```
+
+Create the table once (schema matches the CDK stack: `lot_id` + `ts` keys):
+
+```bash
+export AWS_ACCESS_KEY_ID=local
+export AWS_SECRET_ACCESS_KEY=local
+aws dynamodb create-table \
+  --table-name ParkingLotEvents \
+  --attribute-definitions \
+    AttributeName=lot_id,AttributeType=S \
+    AttributeName=ts,AttributeType=S \
+  --key-schema \
+    AttributeName=lot_id,KeyType=HASH \
+    AttributeName=ts,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST \
+  --region eu-central-1 \
+  --endpoint-url http://localhost:8000
+```
+
+Run the simulator:
+
+```bash
+cd parking_lot
+uv run python simulator.py \
+  --sink dynamodb \
+  --dynamodb-endpoint http://localhost:8000 \
+  --spots 12 \
+  --interval 3 \
+  --flip-prob 0.25 \
+  --max-events 20
+```
+
+Verify items:
+
+```bash
+aws dynamodb scan \
+  --table-name ParkingLotEvents \
+  --endpoint-url http://localhost:8000 \
+  --region eu-central-1
+```
+
+Each row matches the MQTT `status` payload (`lot_id`, `ts`, `spot_id`, `occupied`, `device_id`). The initial occupancy snapshot and periodic summary heartbeats are **not** written to DynamoDB in this mode, matching what the cloud IoT rule persists today (only `parkinglot/+/status` events).
+
+| Flag | Description |
+|------|-------------|
+| `--sink` | `iot` (default) or `dynamodb` |
+| `--dynamodb-endpoint` | DynamoDB API URL (required for `dynamodb` sink) |
+| `--dynamodb-table` | Table name (default: `ParkingLotEvents`) |
+| `--dynamodb-region` | boto3 region (default: `eu-central-1`) |
+| `--dynamodb-lot-id` | `lot_id` field in items (default: `lot_1`) |
+| `--dynamodb-device-id` | `device_id` field in items (default: `parking_lot_camera_01`) |
+
 ## Future work
 - Hook up a webcam to a Raspberry Pi and have live parking monitoring at home! (Live webcam input is now supported via `--video <device_index>` — see the Overview section.)
 - [Transform parking lot video to have overview perspective](http://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_geometric_transformations/py_geometric_transformations.html) (for clearer rectangles)

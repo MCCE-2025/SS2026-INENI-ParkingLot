@@ -1,8 +1,10 @@
-"""Synthetic occupancy simulator for AWS IoT Core (no camera / OpenCV).
+"""Synthetic occupancy simulator (no camera / OpenCV).
 
-Drives the same :class:`IoTPublisher` used by the real detector, but toggles
-spot occupancy in software so you can validate MQTT topics, payloads, Device
-Shadow documents, and IoT Rules without image recognition or hardware.
+Toggles spot occupancy in software and publishes events via a selectable sink:
+
+* ``--sink iot`` (default) — :class:`IoTPublisher` (MQTT + Device Shadow)
+* ``--sink dynamodb`` — :class:`DynamodbPublisher` (direct PutItem, e.g.
+  DynamoDB Local) without AWS IoT Core
 """
 
 import argparse
@@ -12,13 +14,14 @@ import time
 
 import yaml
 
+from dynamodb_publisher import add_dynamodb_args, build_dynamodb_publisher
 from iot_publisher import add_iot_args, build_iot_publisher
 
 logger = logging.getLogger(__name__)
 
 
 class OccupancySimulator:
-    """Simulate parking-spot state changes and publish them to AWS IoT Core."""
+    """Simulate parking-spot state changes and publish them to a sink."""
 
     def __init__(
         self,
@@ -145,9 +148,19 @@ def build_parser():
     """Return the simulator argument parser (shared with CLI tooling)."""
     parser = argparse.ArgumentParser(
         description=(
-            "Simulate parking occupancy and publish to AWS IoT Core "
-            "(no camera or image recognition)."
+            "Simulate parking occupancy and publish events (no camera or "
+            "image recognition). Use --sink to choose AWS IoT Core or "
+            "direct DynamoDB."
         )
+    )
+    parser.add_argument(
+        "--sink",
+        choices=("iot", "dynamodb"),
+        default="iot",
+        help=(
+            "Event sink: iot = AWS IoT Core MQTT + shadow (default); "
+            "dynamodb = direct PutItem to a DynamoDB endpoint."
+        ),
     )
     sim_group = parser.add_argument_group("simulator")
     sim_group.add_argument(
@@ -200,6 +213,7 @@ def build_parser():
     )
 
     add_iot_args(parser)
+    add_dynamodb_args(parser)
     return parser
 
 
@@ -222,7 +236,12 @@ def main():
         )
 
     script = _load_script(args.script) if args.script else None
-    publisher = build_iot_publisher(args, required=True)
+    if args.sink == "iot":
+        publisher = build_iot_publisher(args, required=True)
+    elif args.sink == "dynamodb":
+        publisher = build_dynamodb_publisher(args, required=True)
+    else:
+        raise SystemExit("Unknown --sink %r." % args.sink)
 
     simulator = OccupancySimulator(
         publisher=publisher,
