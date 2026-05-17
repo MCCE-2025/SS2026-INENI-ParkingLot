@@ -347,6 +347,13 @@ The shadow is updated on startup (full snapshot after the first detection pass),
 
 Use the **MQTT test client** in the AWS IoT console to subscribe to `parkinglot/#` and verify messages while the detector runs.
 
+### Cloud-side provisioning with CDK
+
+Instead of clicking through the AWS console, you can stand up the Thing,
+certificate, IoT policy, DynamoDB event sink, and topic rule with the CDK app
+in [`infra/`](infra/). See [`infra/README.md`](infra/README.md) for deploy steps,
+`fetch_certs.py` usage, and teardown.
+
 ### Simulating without a camera
 
 To validate your AWS IoT wiring (topics, payloads, Device Shadow, IoT Rules) without a webcam, video file, or working image recognition, use the standalone simulator. It drives the same `IoTPublisher` as the real detector, so cloud-side rules and dashboards see **identical** MQTT and shadow traffic.
