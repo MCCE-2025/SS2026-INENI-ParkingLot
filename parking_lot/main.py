@@ -22,6 +22,7 @@ except AttributeError:
     pass
 from colors import *
 from coordinates_generator import CoordinatesGenerator
+from iot_publisher import IoTPublisher
 from motion_detector import MotionDetector
 from webcam_controls import (
     CONTROLS,
@@ -114,6 +115,8 @@ def main():
             # one (which would otherwise look like a close+reopen flash).
             generator.generate(keep_window_open=True)
 
+    publisher = _build_iot_publisher(args)
+
     with open(data_file, "r") as data:
         points = yaml.safe_load(data)
         detector = MotionDetector(
@@ -125,8 +128,51 @@ def main():
             window_name=WINDOW_NAME,
             laplacian=args.laplacian,
             detect_delay=args.detect_delay,
+            publisher=publisher,
         )
-        detector.detect_motion()
+        try:
+            detector.detect_motion()
+        finally:
+            if publisher is not None:
+                publisher.disconnect()
+
+
+def _build_iot_publisher(args):
+    """Construct an IoTPublisher when AWS IoT flags are fully provided."""
+    if args.iot_endpoint is None:
+        return None
+
+    missing = []
+    if not args.iot_client_id:
+        missing.append("--iot-client-id")
+    if not args.iot_cert:
+        missing.append("--iot-cert")
+    if not args.iot_key:
+        missing.append("--iot-key")
+    if not args.iot_ca:
+        missing.append("--iot-ca")
+    if missing:
+        raise SystemExit(
+            "AWS IoT Core is enabled via --iot-endpoint but the following "
+            "required flags are missing: %s" % ", ".join(missing)
+        )
+
+    logging.info(
+        "Connecting to AWS IoT Core (endpoint=%s, client_id=%s, lot_id=%s).",
+        args.iot_endpoint,
+        args.iot_client_id,
+        args.iot_lot_id,
+    )
+    return IoTPublisher(
+        endpoint=args.iot_endpoint,
+        client_id=args.iot_client_id,
+        cert_path=args.iot_cert,
+        key_path=args.iot_key,
+        ca_path=args.iot_ca,
+        lot_id=args.iot_lot_id,
+        shadow_name=args.iot_shadow_name,
+        summary_interval=args.iot_summary_interval,
+    )
 
 
 def _coerce_source(value):
@@ -449,6 +495,68 @@ def parse_args():
             "passing pedestrians. Default: %.1f."
         )
         % MotionDetector.DETECT_DELAY,
+    )
+
+    iot_group = parser.add_argument_group(
+        "AWS IoT Core",
+        "Optional MQTT + Device Shadow integration. All --iot-* flags "
+        "except --iot-endpoint are ignored unless --iot-endpoint is set.",
+    )
+    iot_group.add_argument(
+        "--iot-endpoint",
+        dest="iot_endpoint",
+        default=None,
+        help=(
+            "AWS IoT Core data endpoint (from "
+            "`aws iot describe-endpoint --endpoint-type iot:Data-ATS`). "
+            "Enables MQTT publishing when set."
+        ),
+    )
+    iot_group.add_argument(
+        "--iot-client-id",
+        dest="iot_client_id",
+        default=None,
+        help="MQTT client ID and IoT Thing name (required with --iot-endpoint).",
+    )
+    iot_group.add_argument(
+        "--iot-cert",
+        dest="iot_cert",
+        default=None,
+        help="Path to device certificate PEM (required with --iot-endpoint).",
+    )
+    iot_group.add_argument(
+        "--iot-key",
+        dest="iot_key",
+        default=None,
+        help="Path to device private key PEM (required with --iot-endpoint).",
+    )
+    iot_group.add_argument(
+        "--iot-ca",
+        dest="iot_ca",
+        default=None,
+        help="Path to Amazon Root CA PEM (required with --iot-endpoint).",
+    )
+    iot_group.add_argument(
+        "--iot-lot-id",
+        dest="iot_lot_id",
+        default="lot_1",
+        help="Parking lot identifier used in MQTT topics. Default: lot_1.",
+    )
+    iot_group.add_argument(
+        "--iot-shadow-name",
+        dest="iot_shadow_name",
+        default="occupancy",
+        help="Named Device Shadow to update. Default: occupancy.",
+    )
+    iot_group.add_argument(
+        "--iot-summary-interval",
+        dest="iot_summary_interval",
+        type=float,
+        default=30.0,
+        help=(
+            "Seconds between periodic summary heartbeats on MQTT and in the "
+            "shadow. Default: 30."
+        ),
     )
 
     return parser.parse_args()

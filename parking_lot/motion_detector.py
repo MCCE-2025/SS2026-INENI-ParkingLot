@@ -22,6 +22,7 @@ class MotionDetector:
         window_name=None,
         laplacian=None,
         detect_delay=None,
+        publisher=None,
     ):
         self.video = video
         self.coordinates_data = coordinates
@@ -38,6 +39,7 @@ class MotionDetector:
         self.detect_delay = (
             detect_delay if detect_delay is not None else MotionDetector.DETECT_DELAY
         )
+        self.publisher = publisher
         self.contours = []
         self.bounds = []
         self.mask = []
@@ -96,6 +98,7 @@ class MotionDetector:
 
         statuses = [False] * len(coordinates_data)
         times = [None] * len(coordinates_data)
+        initial_snapshot_sent = False
 
         empty_frames = 0
         max_empty_frames = 30  # ~1–2 seconds of dropped reads on a webcam
@@ -132,8 +135,10 @@ class MotionDetector:
             else:
                 position_in_seconds = capture.get(open_cv.CAP_PROP_POS_MSEC) / 1000.0
 
+            frame_measured = []
             for index, c in enumerate(coordinates_data):
                 status = self.__apply(grayed, index, c)
+                frame_measured.append(status)
 
                 if times[index] is not None and self.same_status(
                     statuses, index, status
@@ -147,12 +152,22 @@ class MotionDetector:
                     if position_in_seconds - times[index] >= self.detect_delay:
                         statuses[index] = status
                         times[index] = None
+                        if self.publisher is not None:
+                            self.publisher.publish_spot(
+                                spot_id=index,
+                                occupied=not status,
+                                statuses=statuses,
+                            )
                     continue
 
                 if times[index] is None and self.status_changed(
                     statuses, index, status
                 ):
                     times[index] = position_in_seconds
+
+            if not initial_snapshot_sent and self.publisher is not None:
+                self.publisher.publish_initial_snapshot(frame_measured)
+                initial_snapshot_sent = True
 
             for index, p in enumerate(coordinates_data):
                 coordinates = self._coordinates(p)
@@ -161,6 +176,9 @@ class MotionDetector:
                 draw_contours(
                     new_frame, coordinates, str(p["id"] + 1), COLOR_WHITE, color
                 )
+
+            if self.publisher is not None:
+                self.publisher.publish_summary_if_due(statuses, time.time())
 
             open_cv.imshow(self.window_name, new_frame)
             k = open_cv.waitKey(1)

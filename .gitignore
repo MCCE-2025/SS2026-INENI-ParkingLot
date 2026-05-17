@@ -1,3 +1,7 @@
 *.pyc
 data/
 .idea/
+certs/
+*.pem
+*.key
+*.crt
