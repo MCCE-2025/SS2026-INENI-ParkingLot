@@ -278,7 +278,7 @@ class IoTPublisher:
 
     def _publish_json(self, topic, payload):
         try:
-            future = self._connection.publish(
+            future, _packet_id = self._connection.publish(
                 topic=topic,
                 payload=json.dumps(payload),
                 qos=mqtt.QoS.AT_LEAST_ONCE,

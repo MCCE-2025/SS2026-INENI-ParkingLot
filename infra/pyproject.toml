@@ -12,4 +12,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "boto3>=1.34.0",
+    "PyYAML>=6.0",
+    "awsiotsdk>=1.21",
 ]

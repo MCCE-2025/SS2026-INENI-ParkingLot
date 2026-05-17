@@ -62,12 +62,25 @@ uv run python scripts/fetch_certs.py --stack ParkingLotStack --output ../certs
 ```
 
 This writes `device.pem.crt`, `private.pem.key`, and `AmazonRootCA1.pem` under
-`../certs/` (gitignored) and prints example `main.py` / `simulator.py` commands.
+`../certs/` (gitignored) and prints an example `main.py` command.
+
+## Build simulator command
+
+To assemble a full `simulator.py` CLI (IoT flags from stack outputs, cert paths
+from `../certs/`, smoke-test defaults for `--spots` / `--interval` / `--max-events`):
+
+```bash
+uv run python scripts/build_simulator_cmd.py --stack ParkingLotStack --certs ../certs
+```
+
+Use `--list-required` to print mandatory IoT flags; use `--one-line` for a
+single-line command. See the root [`README.md`](../README.md) simulator section.
 
 ## Verify in AWS
 
 1. Open **IoT Core → MQTT test client**, subscribe to `parkinglot/#`.
-2. Run the simulator from `../parking_lot/` with the printed flags.
+2. Run the simulator from `../parking_lot/` using the command from
+   `build_simulator_cmd.py` (or the flags printed by `fetch_certs.py`).
 3. Check **DynamoDB → ParkingLotEvents** for new items after status events.
 
 ## Teardown
