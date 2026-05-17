@@ -82,9 +82,16 @@ table where required).
 ## Construct notes
 
 - **L2 stable**: `dynamodb.Table`, `secretsmanager.Secret`, `iam.Role`,
-  `iam.PolicyDocument`, `AwsCustomResource`
+  `iam.PolicyDocument`, `lambda.Function`, `custom_resources.Provider`,
+  `AwsCustomResource`
 - **L1** (no stable L2): `CfnThing`, `CfnPolicy`, `CfnTopicRule`, attachments
 - No `aws-cdk.aws-iot-alpha` packages
+- Device certificate creation and Secrets Manager population are performed
+  by an inline Python Lambda (`CertificateProvisionerFunction`) fronted by
+  `custom_resources.Provider`. Doing this in a single Lambda avoids the
+  CloudFormation JSON-string interpolation bug that occurs when PEM
+  newlines from `createKeysAndCertificate` are fed into an
+  `AwsCustomResource` parameter built with `Stack.to_json_string`.
 
 ## Legacy `requirements.txt`
 

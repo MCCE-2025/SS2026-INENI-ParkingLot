@@ -2,15 +2,103 @@
 
 from aws_cdk import (
     CfnOutput,
+    CustomResource,
+    Duration,
     RemovalPolicy,
     Stack,
     aws_dynamodb as dynamodb,
     aws_iam as iam,
     aws_iot as iot,
+    aws_lambda as lambda_,
     aws_secretsmanager as secretsmanager,
     custom_resources as cr,
 )
 from constructs import Construct
+
+
+# Inline Lambda that provisions an IoT device certificate and stores the
+# cert + private key as a JSON blob in Secrets Manager. Doing cert creation
+# AND secret population inside a single Lambda avoids the
+# `AwsCustomResource` JSON-templating bug where PEM newlines from
+# `createKeysAndCertificate` get interpolated as raw control characters
+# into the custom resource Lambda's `Parameters` string, producing
+# "Bad control character in string literal in JSON at position 248".
+_CERTIFICATE_PROVISIONER_CODE = '''
+import json
+import time
+import boto3
+
+iot = boto3.client("iot")
+secrets = boto3.client("secretsmanager")
+
+
+def _looks_like_cert_id(value):
+    return isinstance(value, str) and len(value) >= 32 and all(
+        c in "0123456789abcdef" for c in value.lower()
+    )
+
+
+def on_event(event, context):
+    request_type = event["RequestType"]
+    props = event.get("ResourceProperties", {}) or {}
+    secret_id = props.get("SecretId")
+
+    if request_type == "Create":
+        cert = iot.create_keys_and_certificate(setAsActive=True)
+        payload = json.dumps(
+            {
+                "certificatePem": cert["certificatePem"],
+                "privateKey": cert["keyPair"]["PrivateKey"],
+            }
+        )
+        secrets.put_secret_value(SecretId=secret_id, SecretString=payload)
+        return {
+            "PhysicalResourceId": cert["certificateId"],
+            "Data": {
+                "CertificateArn": cert["certificateArn"],
+                "CertificateId": cert["certificateId"],
+            },
+        }
+
+    if request_type == "Update":
+        cert_id = event["PhysicalResourceId"]
+        described = iot.describe_certificate(certificateId=cert_id)
+        return {
+            "PhysicalResourceId": cert_id,
+            "Data": {
+                "CertificateArn": described["certificateDescription"][
+                    "certificateArn"
+                ],
+                "CertificateId": cert_id,
+            },
+        }
+
+    if request_type == "Delete":
+        cert_id = event.get("PhysicalResourceId")
+        if not _looks_like_cert_id(cert_id):
+            return {"PhysicalResourceId": cert_id or "missing"}
+
+        try:
+            iot.update_certificate(certificateId=cert_id, newStatus="INACTIVE")
+        except iot.exceptions.ResourceNotFoundException:
+            return {"PhysicalResourceId": cert_id}
+
+        # Attachments are deleted by CloudFormation first, but the IoT
+        # control plane is eventually consistent; retry the delete a few
+        # times to ride out lingering principal attachments.
+        for _ in range(6):
+            try:
+                iot.delete_certificate(certificateId=cert_id)
+                break
+            except iot.exceptions.ResourceNotFoundException:
+                break
+            except iot.exceptions.DeleteConflictException:
+                time.sleep(5)
+
+        return {"PhysicalResourceId": cert_id}
+
+    return {"PhysicalResourceId": event.get("PhysicalResourceId", "noop")}
+'''
 
 
 class ParkingLotStack(Stack):
@@ -31,33 +119,7 @@ class ParkingLotStack(Stack):
         # --- IoT Thing (L1) ---
         thing = iot.CfnThing(self, "Thing", thing_name=thing_name)
 
-        # --- Device certificate (AwsCustomResource; no L2 for key generation) ---
-        create_cert = cr.AwsCustomResource(
-            self,
-            "CreateDeviceCertificate",
-            on_create=cr.AwsSdkCall(
-                service="Iot",
-                action="createKeysAndCertificate",
-                parameters={"setAsActive": True},
-                physical_resource_id=cr.PhysicalResourceId.from_response(
-                    "certificateId"
-                ),
-            ),
-            on_delete=cr.AwsSdkCall(
-                service="Iot",
-                action="updateCertificate",
-                parameters={
-                    "certificateId": cr.PhysicalResourceIdReference(),
-                    "newStatus": "INACTIVE",
-                },
-            ),
-            policy=cr.AwsCustomResourcePolicy.from_sdk_calls(
-                resources=cr.AwsCustomResourcePolicy.ANY_RESOURCE,
-            ),
-        )
-        certificate_arn = create_cert.get_response_field("certificateArn")
-
-        # --- Secrets Manager (L2) + populate via custom resource ---
+        # --- Secrets Manager (L2) — placeholder, populated by provisioner ---
         device_secret = secretsmanager.Secret(
             self,
             "DeviceCertificateSecret",
@@ -65,35 +127,52 @@ class ParkingLotStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
         )
 
-        populate_secret = cr.AwsCustomResource(
+        # --- Device certificate + secret population (single Lambda) ---
+        provisioner_fn = lambda_.Function(
             self,
-            "PopulateDeviceCertificateSecret",
-            on_create=cr.AwsSdkCall(
-                service="SecretsManager",
-                action="putSecretValue",
-                parameters={
-                    "SecretId": device_secret.secret_arn,
-                    "SecretString": Stack.of(self).to_json_string(
-                        {
-                            "certificatePem": create_cert.get_response_field(
-                                "certificatePem"
-                            ),
-                            "privateKey": create_cert.get_response_field(
-                                "keyPair.PrivateKey"
-                            ),
-                        }
-                    ),
-                },
-                physical_resource_id=cr.PhysicalResourceId.of(
-                    "PopulateDeviceCertificateSecret"
-                ),
-            ),
-            policy=cr.AwsCustomResourcePolicy.from_sdk_calls(
-                resources=[device_secret.secret_arn],
+            "CertificateProvisionerFunction",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            handler="index.on_event",
+            code=lambda_.Code.from_inline(_CERTIFICATE_PROVISIONER_CODE),
+            timeout=Duration.seconds(120),
+            description=(
+                "Creates an IoT device certificate and stores the cert + "
+                "private key as JSON in Secrets Manager."
             ),
         )
-        populate_secret.node.add_dependency(create_cert)
-        populate_secret.node.add_dependency(device_secret)
+        provisioner_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["iot:CreateKeysAndCertificate"],
+                resources=["*"],
+            )
+        )
+        provisioner_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "iot:UpdateCertificate",
+                    "iot:DeleteCertificate",
+                    "iot:DescribeCertificate",
+                ],
+                resources=["%s:cert/*" % iot_arn],
+            )
+        )
+        device_secret.grant_write(provisioner_fn)
+
+        certificate_provider = cr.Provider(
+            self,
+            "CertificateProvider",
+            on_event_handler=provisioner_fn,
+        )
+
+        provision_cert = CustomResource(
+            self,
+            "CertificateProvisioner",
+            service_token=certificate_provider.service_token,
+            properties={"SecretId": device_secret.secret_arn},
+        )
+        provision_cert.node.add_dependency(device_secret)
+
+        certificate_arn = provision_cert.get_att_string("CertificateArn")
 
         # --- IoT policy document (L2 iam) -> L1 CfnPolicy ---
         shadow_topic = (
