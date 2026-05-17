@@ -21,7 +21,8 @@ Original upstream: [olgarose/ParkingLot](https://github.com/olgarose/ParkingLot)
 .
 ├── AGENT.md                 # This file
 ├── README.md                # User-facing docs (OpenCV walkthrough + IoT + simulator)
-├── requirements.txt         # Device/runtime deps (pip); OpenCV app in parking_lot/
+├── pyproject.toml           # Device/runtime deps (uv); OpenCV app in parking_lot/
+├── uv.lock                  # Locked device dependencies
 ├── parking_lot/             # Application code (run from this directory)
 │   ├── main.py              # CLI entry: marking + detection
 │   ├── motion_detector.py   # Per-frame Laplacian occupancy loop
@@ -61,26 +62,26 @@ Debouncing: a change must hold for `--detect-delay` seconds (default 1.0) before
 
 ## Running the application
 
-Work from `parking_lot/`:
+Install device deps from the repo root (`uv sync`), then work from `parking_lot/`:
 
 ```bash
-# Install device deps (from repo root or parking_lot/)
-pip install -r ../requirements.txt
+# Install device deps (repo root)
+uv sync
 
 # Webcam, auto-mark if data file empty
-python main.py --video 0 --data data/coordinates_webcam.yml
+uv run python main.py --video 0 --data data/coordinates_webcam.yml
 
 # Video file
-python main.py --video videos/parking_lot_1.mp4 --data data/coordinates_1.yml --start-frame 400
+uv run python main.py --video videos/parking_lot_1.mp4 --data data/coordinates_1.yml --start-frame 400
 
 # With AWS IoT (after infra deploy + fetch_certs)
-python main.py --video 0 --data data/coordinates_webcam.yml \
+uv run python main.py --video 0 --data data/coordinates_webcam.yml \
   --iot-endpoint <endpoint> --iot-client-id parking_lot_camera_01 \
   --iot-cert ../certs/device.pem.crt --iot-key ../certs/private.pem.key \
   --iot-ca ../certs/AmazonRootCA1.pem
 
 # Simulator (no camera)
-python simulator.py --spots 8 --interval 3 --max-events 10 \
+uv run python simulator.py --spots 8 --interval 3 --max-events 10 \
   --iot-endpoint ... --iot-client-id ... --iot-cert ... --iot-key ... --iot-ca ...
 ```
 
@@ -101,7 +102,7 @@ See `README.md` for example policy JSON and shadow document shape.
 
 Python CDK stack provisions: IoT Thing, cert (via custom resource → Secrets Manager), IoT policy, topic rule `parkinglot/+/status` → DynamoDB `ParkingLotEvents` (`lot_id` + `ts` keys).
 
-**Tooling:** [uv](https://docs.astral.sh/uv/) (not manual venv). See `infra/README.md`.
+**Tooling:** [uv](https://docs.astral.sh/uv/) for device app (`uv sync` at repo root) and CDK (`cd infra && uv sync`). See `infra/README.md`.
 
 ```bash
 cd infra
@@ -118,7 +119,7 @@ Tunables in `infra/cdk.json` → `context`: `thing_name`, `lot_id`, `shadow_name
 
 ## Gitignored / secrets
 
-Never commit: `certs/`, `*.pem`, `*.key`, `*.crt`, `infra/cdk.out/`, `infra/.venv/`, `data/` (coordinates may contain site-specific layouts).
+Never commit: `certs/`, `*.pem`, `*.key`, `*.crt`, `.venv/`, `infra/cdk.out/`, `infra/.venv/`, `data/` (coordinates may contain site-specific layouts).
 
 ## Conventions for agents
 
@@ -144,7 +145,7 @@ Never commit: `certs/`, `*.pem`, `*.key`, `*.crt`, `infra/cdk.out/`, `infra/.ven
 
 | Area | Install |
 |------|---------|
-| Device app | `pip install -r requirements.txt` — `opencv-python`, `numpy`, `PyYAML`, `awsiotsdk` |
+| Device app | `uv sync` (repo root) — `opencv-python`, `numpy`, `PyYAML`, `awsiotsdk` |
 | CDK / infra | `cd infra && uv sync --all-groups` |
 | CLI tools | AWS CLI (`aws configure`), Node.js + `npm install -g aws-cdk` |
 

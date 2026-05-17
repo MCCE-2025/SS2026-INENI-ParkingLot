@@ -121,9 +121,9 @@ def main():
         rel_cert = os.path.relpath(cert_path, os.getcwd())
         rel_key = os.path.relpath(key_path, os.getcwd())
         rel_ca = os.path.relpath(ca_path, os.getcwd())
-        print("Example (from parking_lot/):")
+        print("Example (from parking_lot/; run `uv sync` at repo root first):")
         print(
-            "python main.py --video 0 --data data/coordinates_webcam.yml \\\n"
+            "uv run python main.py --video 0 --data data/coordinates_webcam.yml \\\n"
             "  --iot-endpoint %s \\\n"
             "  --iot-client-id %s \\\n"
             "  --iot-cert %s \\\n"
@@ -134,7 +134,7 @@ def main():
         print()
         print("Simulator smoke test:")
         print(
-            "python simulator.py --spots 8 --interval 3 --max-events 5 \\\n"
+            "uv run python simulator.py --spots 8 --interval 3 --max-events 5 \\\n"
             "  --iot-endpoint %s \\\n"
             "  --iot-client-id %s \\\n"
             "  --iot-cert %s \\\n"

@@ -11,6 +11,18 @@ This page is a walkthrough of my process and what I learned along the way.
 
 I'll start with an overview, then talk about my process, and end with some ideas for future work.
 
+## Setup
+
+Install [uv](https://docs.astral.sh/uv/) if needed (`curl -LsSf https://astral.sh/uv/install.sh | sh`), then from the repository root:
+
+```bash
+uv sync
+```
+
+This creates `.venv/` and installs OpenCV, NumPy, PyYAML, and the AWS IoT SDK (`awsiotsdk`). Dependencies are declared in `pyproject.toml` with a lockfile (`uv.lock`) for reproducible installs.
+
+Run commands with `uv run` from `parking_lot/` (as in the examples below), or from the repo root with paths such as `uv run python parking_lot/main.py`.
+
 ## Overview
 [![Unedited parking lot](https://s3-us-west-2.amazonaws.com/parkinglot-opencv/parking_shot.png)](https://www.youtube.com/watch?v=SszV59YBn_o)
 
@@ -20,29 +32,30 @@ The marking frame always comes from `--video` itself — either a live webcam fr
 
 Against a connected webcam, pass the camera's device index (an integer such as `0` for the default camera) to `--video`. Just give the program a data file path and a webcam, and it will automatically grab a frame for you to mark spots on, then start live detection:
 
-```python
-python main.py --data data/coordinates_webcam.yml --video 0
+```bash
+cd parking_lot
+uv run python main.py --data data/coordinates_webcam.yml --video 0
 ```
 
 Against a recorded video file, point `--video` at the file. If the data file is empty (or doesn't exist yet), a still is pulled from the video at `--start-frame` so you can mark spots on the same frame detection will start at:
 
-```python
-python main.py --data data/coordinates_1.yml --video videos/parking_lot_1.mp4 --start-frame 400
+```bash
+uv run python main.py --data data/coordinates_1.yml --video videos/parking_lot_1.mp4 --start-frame 400
 ```
 
 The marking step runs automatically when the `--data` file is missing or contains no spots (e.g. a freshly-created file or one whose contents are `[]`). Once spots are saved, subsequent runs skip marking and go straight to detection.
 
 Useful extras:
 
-```python
+```bash
 # Save the captured marking frame to disk, e.g. for debugging or as a
 # visual reference of how the spots were laid out.
-python main.py --snapshot images/snapshot.png \
+uv run python main.py --snapshot images/snapshot.png \
     --data data/coordinates_webcam.yml --video 0
 
 # Re-mark spots even though the coordinates file already exists. A fresh
 # frame is captured from --video (webcam or file) automatically.
-python main.py --remark --data data/coordinates_webcam.yml --video 0
+uv run python main.py --remark --data data/coordinates_webcam.yml --video 0
 ```
 
 If you have multiple cameras connected, try `--video 1`, `--video 2`, etc. The `--start-frame` flag is ignored when reading from a webcam (live streams are not seekable).
@@ -62,9 +75,9 @@ Available flags (all optional, all only apply when `--video` is a webcam):
 
 Value ranges are camera/driver specific — run `v4l2-ctl -L` (Linux) or check the camera's docs for valid values. Example:
 
-```python
+```bash
 # Pin brightness to 192 and switch to manual exposure at 250
-python main.py --data data/coordinates_webcam.yml --video 0 \
+uv run python main.py --data data/coordinates_webcam.yml --video 0 \
     --auto-exposure 1 --exposure 250 --brightness 192
 ```
 
@@ -74,14 +87,14 @@ If the driver rejects a control (some cameras don't expose all of them), the pro
 
 If you don't want to pin a fixed value, `--auto-brightness` runs a simple feedback loop: it samples the mean luminance of each frame and nudges a hardware control up or down to keep it near `--auto-brightness-target` (default `128`, the neutral midtone). It auto-detects which control to drive (tries `exposure`, then `gain`, then `brightness`), or you can pin one with `--auto-brightness-prop`.
 
-```python
+```bash
 # Default: target mean luminance 128, auto-detect which control to drive.
-python main.py --data data/coordinates_webcam.yml --video 0 \
+uv run python main.py --data data/coordinates_webcam.yml --video 0 \
     --auto-exposure 1 --auto-brightness
 
 # Drive the brightness control specifically and aim for slightly brighter
 # (mean=160) than midtone.
-python main.py --data data/coordinates_webcam.yml --video 0 \
+uv run python main.py --data data/coordinates_webcam.yml --video 0 \
     --auto-brightness --auto-brightness-prop brightness \
     --auto-brightness-target 160
 ```
@@ -211,10 +224,10 @@ Check out [the code](https://github.com/olgarose/ParkingLot) for more!
 
 The detector can optionally publish live occupancy to **AWS IoT Core** over MQTT (TLS 8883, X.509 mTLS) and keep a **named Device Shadow** in sync. When the `--iot-*` flags are omitted, the program behaves exactly as before.
 
-Install dependencies (including the optional AWS SDK):
+Install dependencies (including the AWS IoT SDK) from the repository root:
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ### AWS setup (one-time)
@@ -294,7 +307,7 @@ aws iot describe-endpoint --endpoint-type iot:Data-ATS
 
 ```bash
 cd parking_lot
-python main.py \
+uv run python main.py \
   --video 0 \
   --data data/coordinates_webcam.yml \
   --iot-endpoint a1b2c3d4e5f6-ats.iot.eu-central-1.amazonaws.com \
@@ -360,7 +373,7 @@ To validate your AWS IoT wiring (topics, payloads, Device Shadow, IoT Rules) wit
 
 ```bash
 cd parking_lot
-python simulator.py \
+uv run python simulator.py \
   --spots 12 \
   --interval 3 \
   --flip-prob 0.25 \
@@ -392,7 +405,7 @@ python simulator.py \
 ```
 
 ```bash
-python simulator.py --script data/sim_events.yml \
+uv run python simulator.py --script data/sim_events.yml \
   --spots 8 --iot-endpoint ... --iot-client-id ... \
   --iot-cert ... --iot-key ... --iot-ca ...
 ```

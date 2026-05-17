@@ -9,7 +9,8 @@ detector:
 - DynamoDB table `ParkingLotEvents` (`lot_id` + `ts` keys)
 
 The device code in `../parking_lot/` is unchanged; this stack matches its
-existing MQTT topic layout and CLI flags.
+existing MQTT topic layout and CLI flags. Install device dependencies from the
+repo root with `uv sync` (see the main `README.md`).
 
 ## Prerequisites
 
