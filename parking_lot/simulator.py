@@ -141,7 +141,8 @@ def _load_script(path):
     return data
 
 
-def parse_args():
+def build_parser():
+    """Return the simulator argument parser (shared with CLI tooling)."""
     parser = argparse.ArgumentParser(
         description=(
             "Simulate parking occupancy and publish to AWS IoT Core "
@@ -199,7 +200,11 @@ def parse_args():
     )
 
     add_iot_args(parser)
-    return parser.parse_args()
+    return parser
+
+
+def parse_args():
+    return build_parser().parse_args()
 
 
 def main():

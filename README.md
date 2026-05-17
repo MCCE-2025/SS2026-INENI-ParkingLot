@@ -365,11 +365,24 @@ Use the **MQTT test client** in the AWS IoT console to subscribe to `parkinglot/
 Instead of clicking through the AWS console, you can stand up the Thing,
 certificate, IoT policy, DynamoDB event sink, and topic rule with the CDK app
 in [`infra/`](infra/). See [`infra/README.md`](infra/README.md) for deploy steps,
-`fetch_certs.py` usage, and teardown.
+`fetch_certs.py` usage, `build_simulator_cmd.py`, and teardown.
 
 ### Simulating without a camera
 
 To validate your AWS IoT wiring (topics, payloads, Device Shadow, IoT Rules) without a webcam, video file, or working image recognition, use the standalone simulator. It drives the same `IoTPublisher` as the real detector, so cloud-side rules and dashboards see **identical** MQTT and shadow traffic.
+
+After CDK deploy and `fetch_certs.py`, you can print a ready-to-run command (stack endpoint, Thing name, and cert paths filled in) with:
+
+```bash
+cd infra
+uv sync --all-groups
+uv run python scripts/fetch_certs.py --stack ParkingLotStack --output ../certs
+uv run python scripts/build_simulator_cmd.py --stack ParkingLotStack --certs ../certs
+```
+
+The script reads CloudFormation outputs, checks that the PEM files exist, introspects `simulator.py` for flag names, and prints a multiline `uv run python simulator.py ...` line to run from `parking_lot/`. Use `--list-required` to see which flags are mandatory for IoT (`--iot-endpoint` plus cert paths and `--iot-client-id`). Override simulator behaviour with the same flags as the real CLI (for example `--spots 12 --max-events 20`); pass `--one-line` for a single-line command.
+
+Manual run (replace placeholders with your endpoint, Thing name, and cert paths):
 
 ```bash
 cd parking_lot
