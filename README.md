@@ -484,6 +484,50 @@ Each row matches the MQTT `status` payload (`lot_id`, `ts`, `spot_id`, `occupied
 | `--dynamodb-lot-id` | `lot_id` field in items (default: `lot_1`) |
 | `--dynamodb-device-id` | `device_id` field in items (default: `parking_lot_camera_01`) |
 
+## Web dashboard
+
+A React SPA in [`web/`](web/) shows live parking occupancy: summary tiles, a per-spot grid (green = free, blue = occupied, matching the OpenCV overlay), and a one-hour history sparkline.
+
+**Data flow:**
+
+1. On load, `GET /snapshot` reads the `occupancy` Device Shadow (same document shape as in the IoT section above).
+2. MQTT-over-WebSocket (SigV4 + Cognito Identity Pool) subscribes to `parkinglot/<lot_id>/status` and `.../summary` for live updates.
+3. `GET /history` queries `ParkingLotEvents` in DynamoDB for the sparkline.
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) 20+ (`npm`)
+- Device stack deployed (`ParkingLotStack`) and, for live data, the simulator or detector publishing to IoT
+
+### Deploy
+
+From the repository root:
+
+```bash
+cd infra
+uv sync --all-groups
+cdk deploy ParkingLotStack          # if not already deployed
+uv run python scripts/deploy_web.py # npm build + cdk deploy ParkingLotWebStack
+```
+
+Stack outputs include **`WebUrl`** (CloudFront) and **`ApiUrl`** (HTTP API). Open `WebUrl` in a browser.
+
+To drive live updates without a camera:
+
+```bash
+cd parking_lot
+uv run python simulator.py --spots 12 --interval 2 \
+  --iot-endpoint ... --iot-client-id ... \
+  --iot-cert ../certs/device.pem.crt --iot-key ../certs/private.pem.key \
+  --iot-ca ../certs/AmazonRootCA1.pem
+```
+
+(use `build_simulator_cmd.py` to print the full command).
+
+### Local development
+
+See [`web/README.md`](web/README.md). After the first deploy, copy stack outputs into `web/public/config.json` (see `web/public/config.example.json`) and run `npm run dev` in `web/`.
+
 ## Future work
 - Hook up a webcam to a Raspberry Pi and have live parking monitoring at home! (Live webcam input is now supported via `--video <device_index>` — see the Overview section.)
 - [Transform parking lot video to have overview perspective](http://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_geometric_transformations/py_geometric_transformations.html) (for clearer rectangles)

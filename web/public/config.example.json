@@ -1,0 +1,9 @@
+{
+  "region": "eu-central-1",
+  "iotEndpoint": "YOUR_ENDPOINT-ats.iot.eu-central-1.amazonaws.com",
+  "identityPoolId": "eu-central-1:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "apiUrl": "https://xxxxxxxx.execute-api.eu-central-1.amazonaws.com",
+  "lotId": "lot_1",
+  "thingName": "parking_lot_camera_01",
+  "shadowName": "occupancy"
+}

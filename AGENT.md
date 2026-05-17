@@ -12,6 +12,7 @@ Extended on the `webcam` / `iot-core-mqtt` branches with:
 - Optional **AWS IoT Core** publishing (MQTT + named Device Shadow)
 - A **simulator** that fakes occupancy events without a camera
 - **CDK infrastructure** (`infra/`) to provision Thing, certificate, policy, DynamoDB sink
+- **Web dashboard** (`web/`) — React SPA on S3/CloudFront with live MQTT-over-WSS + shadow snapshot API
 
 Original upstream: [olgarose/ParkingLot](https://github.com/olgarose/ParkingLot) (weekend OpenCV experiment).
 
@@ -35,12 +36,21 @@ Original upstream: [olgarose/ParkingLot](https://github.com/olgarose/ParkingLot)
 │   ├── data/                # YAML spot coordinates (often gitignored via data/)
 │   ├── images/, videos/     # Sample assets
 │   └── tests/               # Minimal / placeholder tests
+├── web/                     # React + Vite dashboard (S3/CloudFront via ParkingLotWebStack)
+│   ├── src/                 # SPA: MQTT live updates, shadow snapshot, history sparkline
+│   └── public/config.example.json
 └── infra/                   # AWS CDK (Python, uv-managed)
     ├── app.py
     ├── cdk.json             # app: "uv run python app.py"
     ├── pyproject.toml       # CDK + boto3 (dev group)
-    ├── parking_lot_cdk/parking_lot_stack.py
-    └── scripts/fetch_certs.py
+    ├── parking_lot_cdk/
+    │   ├── parking_lot_stack.py      # Device IoT + DynamoDB
+    │   └── parking_lot_web_stack.py  # SPA hosting + API + Cognito Identity Pool
+    ├── lambdas/get_snapshot/         # GET /snapshot → Device Shadow
+    ├── lambdas/get_history/          # GET /history → DynamoDB query
+    └── scripts/
+        ├── fetch_certs.py
+        └── deploy_web.py
 ```
 
 ## Branches
@@ -129,6 +139,8 @@ Never commit: `certs/`, `*.pem`, `*.key`, `*.crt`, `.venv/`, `infra/cdk.out/`, `
 - **Shared IoT CLI:** Add or change `--iot-*` flags only in `iot_publisher.add_iot_args()`, not duplicated in `main.py` / `simulator.py`.
 - **Shared DynamoDB CLI:** Add or change `--dynamodb-*` flags only in `dynamodb_publisher.add_dynamodb_args()`, not duplicated in `simulator.py`.
 - **Policy parity:** IoT policy in CDK (`parking_lot_stack.py`) must stay aligned with `README.md` so console/manual and CDK paths behave the same.
+- **Browser IoT read-only:** The Cognito unauth role in `parking_lot_web_stack.py` must never grant `iot:Publish`, shadow update, or device cert access. Only `Connect` / `Subscribe` / `Receive` on `parkinglot/+/status` and `parkinglot/+/summary`.
+- **Web deploy order:** `npm run build` in `web/` must complete before `cdk deploy ParkingLotWebStack` (or use `infra/scripts/deploy_web.py`).
 - **Tests:** `parking_lot/tests/` is minimal; prefer not to add heavy test harnesses unless asked.
 - **Commits:** Only commit when the user explicitly requests it.
 
@@ -143,6 +155,8 @@ Never commit: `certs/`, `*.pem`, `*.key`, `*.crt`, `.venv/`, `infra/cdk.out/`, `
 | Test cloud without camera | `parking_lot/simulator.py` (`--sink iot`) |
 | Test DynamoDB without IoT | `parking_lot/simulator.py` (`--sink dynamodb`) |
 | Materialize device certs | `infra/scripts/fetch_certs.py` |
+| Deploy web dashboard | `infra/scripts/deploy_web.py` or `web/README.md` |
+| Web stack CDK | `infra/parking_lot_cdk/parking_lot_web_stack.py` |
 
 ## Dependencies
 

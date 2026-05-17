@@ -305,6 +305,15 @@ class ParkingLotStack(Stack):
             "https://www.amazontrust.com/repository/AmazonRootCA1.pem"
         )
 
+        # Exposed for ParkingLotWebStack (cross-stack constructor refs).
+        self.iot_data_endpoint = describe_endpoint.get_response_field(
+            "endpointAddress"
+        )
+        self.events_table = events_table
+        self.thing_name_value = thing_name
+        self.shadow_name_value = shadow_name
+        self.lot_id_value = self.node.try_get_context("lot_id") or "lot_1"
+
         # --- Outputs ---
         CfnOutput(self, "IoTDataEndpoint", value=describe_endpoint.get_response_field("endpointAddress"))
         CfnOutput(self, "ThingName", value=thing.thing_name)

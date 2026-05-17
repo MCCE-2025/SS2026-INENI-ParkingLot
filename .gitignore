@@ -7,3 +7,6 @@ certs/
 *.key
 *.crt
 infra/cdk.out/
+web/node_modules/
+web/dist/
+web/public/config.json
