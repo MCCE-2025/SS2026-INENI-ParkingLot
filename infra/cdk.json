@@ -1,0 +1,23 @@
+{
+  "app": "uv run python app.py",
+  "watch": {
+    "include": ["**"],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "requirements*.txt",
+      "source.bat",
+      "**/__init__.py",
+      "**/__pycache__",
+      "tests"
+    ]
+  },
+  "context": {
+    "thing_name": "parking_lot_camera_01",
+    "lot_id": "lot_1",
+    "shadow_name": "occupancy",
+    "events_table_name": "ParkingLotEvents",
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:checkSecretUsage": true
+  }
+}

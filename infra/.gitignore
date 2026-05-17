@@ -1,0 +1,7 @@
+.venv/
+cdk.out/
+# uv lockfile is committed for reproducible installs
+*.swp
+__pycache__/
+*.egg-info/
+.pytest_cache/
