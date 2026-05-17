@@ -347,6 +347,51 @@ The shadow is updated on startup (full snapshot after the first detection pass),
 
 Use the **MQTT test client** in the AWS IoT console to subscribe to `parkinglot/#` and verify messages while the detector runs.
 
+### Simulating without a camera
+
+To validate your AWS IoT wiring (topics, payloads, Device Shadow, IoT Rules) without a webcam, video file, or working image recognition, use the standalone simulator. It drives the same `IoTPublisher` as the real detector, so cloud-side rules and dashboards see **identical** MQTT and shadow traffic.
+
+```bash
+cd parking_lot
+python simulator.py \
+  --spots 12 \
+  --interval 3 \
+  --flip-prob 0.25 \
+  --max-events 20 \
+  --iot-endpoint a1b2c3d4e5f6-ats.iot.eu-central-1.amazonaws.com \
+  --iot-client-id parking_lot_camera_01 \
+  --iot-cert ../certs/device.pem.crt \
+  --iot-key ../certs/private.pem.key \
+  --iot-ca ../certs/AmazonRootCA1.pem \
+  --iot-lot-id lot_1
+```
+
+| Flag | Description |
+|------|-------------|
+| `--spots` | Number of simulated spots (default: 8) |
+| `--interval` | Seconds between ticks in random mode (default: 5) |
+| `--flip-prob` | Random mode: probability a spot toggles each tick (default: 0.2) |
+| `--initial-occupancy-prob` | Fraction of spots that start occupied (default: 0) |
+| `--script` | YAML file of timed events (see below); `--flip-prob` is ignored |
+| `--seed` | RNG seed for reproducible random runs |
+| `--max-events` | Stop after N spot state changes (useful for smoke tests) |
+
+**Scripted replay** (`--script`): each event has `t` (seconds from start), `spot` (index), and `occupied` (boolean):
+
+```yaml
+- {t: 0,  spot: 0, occupied: true}
+- {t: 5,  spot: 0, occupied: false}
+- {t: 12, spot: 3, occupied: true}
+```
+
+```bash
+python simulator.py --script data/sim_events.yml \
+  --spots 8 --iot-endpoint ... --iot-client-id ... \
+  --iot-cert ... --iot-key ... --iot-ca ...
+```
+
+Subscribe to `parkinglot/#` in the IoT console MQTT test client while the simulator runs to confirm messages arrive.
+
 ## Future work
 - Hook up a webcam to a Raspberry Pi and have live parking monitoring at home! (Live webcam input is now supported via `--video <device_index>` — see the Overview section.)
 - [Transform parking lot video to have overview perspective](http://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_geometric_transformations/py_geometric_transformations.html) (for clearer rectangles)
