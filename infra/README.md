@@ -83,10 +83,40 @@ single-line command. See the root [`README.md`](../README.md) simulator section.
    `build_simulator_cmd.py` (or the flags printed by `fetch_certs.py`).
 3. Check **DynamoDB → ParkingLotEvents** for new items after status events.
 
+## Web dashboard stack
+
+`ParkingLotWebStack` (registered in `app.py` alongside `ParkingLotStack`) provisions:
+
+- S3 + CloudFront SPA hosting
+- Cognito Identity Pool (unauthenticated) with **read-only** IoT subscribe policy
+- HTTP API: `GET /snapshot` (Device Shadow), `GET /history` (DynamoDB query)
+- Runtime `config.json` injected at deploy time
+
+Deploy after building the frontend:
+
+```bash
+uv run python scripts/deploy_web.py
+```
+
+Or manually:
+
+```bash
+cd ../web && npm install && npm run build
+cd ../infra && cdk deploy ParkingLotWebStack
+```
+
+Outputs: `WebUrl`, `ApiUrl`, `IdentityPoolId`.
+
 ## Teardown
 
 ```bash
-cdk destroy
+cdk destroy --all
+```
+
+Destroy `ParkingLotWebStack` alone to iterate on the frontend without touching device certs:
+
+```bash
+cdk destroy ParkingLotWebStack
 ```
 
 Because the stack uses `RemovalPolicy.DESTROY` on the DynamoDB table and
