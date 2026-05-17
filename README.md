@@ -207,6 +207,146 @@ The code for drawing the rectangles and motion detection is pretty generic. It's
 
 Check out [the code](https://github.com/olgarose/ParkingLot) for more!
 
+## AWS IoT Core (MQTT + Device Shadow)
+
+The detector can optionally publish live occupancy to **AWS IoT Core** over MQTT (TLS 8883, X.509 mTLS) and keep a **named Device Shadow** in sync. When the `--iot-*` flags are omitted, the program behaves exactly as before.
+
+Install dependencies (including the optional AWS SDK):
+
+```bash
+pip install -r requirements.txt
+```
+
+### AWS setup (one-time)
+
+1. **Create a Thing** in the AWS IoT Core console (or CLI), e.g. `parking_lot_camera_01`. The Thing name must match `--iot-client-id`.
+
+2. **Create and download certificates** for the Thing:
+   - `device.pem.crt` (device certificate)
+   - `private.pem.key` (private key)
+   - `AmazonRootCA1.pem` ([Amazon Root CA](https://www.amazontrust.com/repository/AmazonRootCA1.pem))
+
+   Store them in a local `certs/` directory (this folder is gitignored).
+
+3. **Attach an IoT policy** to the certificate. Example (replace account ID, region, and client ID):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "iot:Connect",
+      "Resource": "arn:aws:iot:eu-central-1:123456789012:client/parking_lot_camera_01"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "iot:Publish",
+      "Resource": [
+        "arn:aws:iot:eu-central-1:123456789012:topic/parkinglot/*/status",
+        "arn:aws:iot:eu-central-1:123456789012:topic/parkinglot/*/summary"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "iot:GetThingShadow",
+        "iot:UpdateThingShadow"
+      ],
+      "Resource": "arn:aws:iot:eu-central-1:123456789012:thing/parking_lot_camera_01"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "iot:Publish",
+        "iot:Subscribe",
+        "iot:Receive"
+      ],
+      "Resource": [
+        "arn:aws:iot:eu-central-1:123456789012:topic/$aws/things/parking_lot_camera_01/shadow/name/occupancy/*",
+        "arn:aws:iot:eu-central-1:123456789012:topicfilter/$aws/things/parking_lot_camera_01/shadow/name/occupancy/*"
+      ]
+    }
+  ]
+}
+```
+
+4. **Note your data endpoint**:
+
+```bash
+aws iot describe-endpoint --endpoint-type iot:Data-ATS
+```
+
+### CLI flags
+
+| Flag | Description |
+|------|-------------|
+| `--iot-endpoint` | AWS IoT data endpoint (enables integration when set) |
+| `--iot-client-id` | MQTT client ID / Thing name (required with endpoint) |
+| `--iot-cert` | Path to device certificate PEM |
+| `--iot-key` | Path to device private key PEM |
+| `--iot-ca` | Path to Amazon Root CA PEM |
+| `--iot-lot-id` | Lot identifier in MQTT topics (default: `lot_1`) |
+| `--iot-shadow-name` | Named shadow (default: `occupancy`) |
+| `--iot-summary-interval` | Summary heartbeat interval in seconds (default: 30) |
+
+### Example: webcam + AWS IoT
+
+```bash
+cd parking_lot
+python main.py \
+  --video 0 \
+  --data data/coordinates_webcam.yml \
+  --iot-endpoint a1b2c3d4e5f6-ats.iot.eu-central-1.amazonaws.com \
+  --iot-client-id parking_lot_camera_01 \
+  --iot-cert ../certs/device.pem.crt \
+  --iot-key ../certs/private.pem.key \
+  --iot-ca ../certs/AmazonRootCA1.pem \
+  --iot-lot-id lot_1
+```
+
+### MQTT topics
+
+- `parkinglot/<lot_id>/status` (QoS 1) — one message per confirmed spot state change
+- `parkinglot/<lot_id>/summary` (QoS 1) — periodic `{free, occupied, total}` heartbeat
+
+Example `status` payload:
+
+```json
+{
+  "lot_id": "lot_1",
+  "spot_id": 2,
+  "occupied": true,
+  "ts": "2026-05-17T19:34:21Z",
+  "device_id": "parking_lot_camera_01"
+}
+```
+
+### Device Shadow document
+
+Named shadow `occupancy` (configurable via `--iot-shadow-name`):
+
+```json
+{
+  "state": {
+    "reported": {
+      "lot_id": "lot_1",
+      "device_id": "parking_lot_camera_01",
+      "spots": {
+        "0": {"occupied": true, "ts": "2026-05-17T19:34:21Z"},
+        "1": {"occupied": false, "ts": "2026-05-17T19:34:21Z"}
+      },
+      "summary": {"free": 3, "occupied": 5, "total": 8},
+      "ts": "2026-05-17T19:34:21Z"
+    }
+  }
+}
+```
+
+The shadow is updated on startup (full snapshot after the first detection pass), on each confirmed state change (delta for that spot + summary), and on each summary heartbeat.
+
+Use the **MQTT test client** in the AWS IoT console to subscribe to `parkinglot/#` and verify messages while the detector runs.
+
 ## Future work
 - Hook up a webcam to a Raspberry Pi and have live parking monitoring at home! (Live webcam input is now supported via `--video <device_index>` — see the Overview section.)
 - [Transform parking lot video to have overview perspective](http://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_geometric_transformations/py_geometric_transformations.html) (for clearer rectangles)
