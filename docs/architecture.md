@@ -54,11 +54,14 @@ flowchart TB
             subgraph API["HTTP API  (API Gateway v2)"]
                 SNAP["GET /snapshot\nGetSnapshot Lambda\n(Device Shadow → DynamoDB fallback)"]
                 HIST["GET /history\nGetHistory Lambda\n(1-hour DynamoDB query)"]
+                CTRL["POST /control\nControl Lambda\n(MQTT publish + shadow update)"]
             end
 
             SNAP -->|GetThingShadow| SHADOW
             SNAP -->|fallback Query| DDB
             HIST -->|Query by lot_id + ts range| DDB
+            CTRL -->|Publish parkinglot/lot_id/status| BROKER
+            CTRL -->|UpdateThingShadow| SHADOW
         end
     end
 
@@ -77,7 +80,7 @@ flowchart TB
 
         subgraph UI["Components"]
             TILES["SummaryTiles\nfree / occupied counts"]
-            GRID["SpotGrid\nper-spot status\n(green = free · blue = occupied)"]
+            GRID["SpotGrid\nper-spot status · click to toggle\n(green = free · blue = occupied)"]
             SPARK["SparklineHistory\n1-hour occupancy chart"]
             PILL["ConnectionPill\nMQTT status badge"]
         end
@@ -97,7 +100,8 @@ flowchart TB
     BROWSER -->|HTTPS| CF
     COGN_LIB -->|GetId · GetCredentialsForIdentity| COGNITO
     MQTT_LIB -->|"SigV4 presigned WSS\nport 443\nSubscribe: parkinglot/#"| BROKER
-    API_LIB -->|"GET /snapshot\nGET /history"| API
+    API_LIB -->|"GET /snapshot\nGET /history\nPOST /control"| API
+    GRID -->|"POST spot_id, occupied"| API_LIB
 
     %% ── STYLING ──────────────────────────────────────────────────────────────
     classDef aws      fill:#FF9900,color:#000,stroke:#c47700
@@ -111,7 +115,7 @@ flowchart TB
     class BROKER,SHADOW,RULE iot
     class DDB dynamo
     class CF,S3,COGNITO,API aws
-    class SNAP,HIST,CERT_LAMBDA lambda
+    class SNAP,HIST,CTRL,CERT_LAMBDA lambda
     class SM aws
     class CAM,MD,SIM,IOT_PUB,DDB_PUB device
     class APP,COGN_LIB,SIGV4,MQTT_LIB,API_LIB,TILES,GRID,SPARK,PILL browser
@@ -130,16 +134,21 @@ flowchart TB
 | **DynamoDB** | ParkingLotEvents | Time-series event log (PK: `lot_id`, SK: `ts`) with TTL for auto-expiry |
 | **Lambda** | GetSnapshot | Returns Device Shadow; falls back to DynamoDB reconstruction if shadow unavailable |
 | **Lambda** | GetHistory | Queries DynamoDB for a 1-hour window to feed the sparkline chart |
+| **Lambda** | Control | Accepts manual spot overrides: publishes to `parkinglot/<lot_id>/status` and updates the Device Shadow (`device_id: web_control`) |
 | **Cognito** | Identity Pool | Issues temporary AWS credentials to anonymous browser users |
 | **CloudFront + S3** | Static Hosting | Serves the React SPA globally with OAC-protected S3 origin |
 | **Browser** | React SPA | Displays live spot grid, summary tiles, and sparkline via MQTT + HTTP API |
-| **Browser** | mqtt.ts | MQTT.js over SigV4-presigned WSS — subscribes to live status + summary topics |
+| **Browser** | mqtt.ts | MQTT.js over SigV4-presigned WSS — subscribes to live status + summary topics (read-only) |
+| **Browser** | SpotGrid | Click a spot to call `POST /control`; UI updates when the MQTT status echo arrives |
 
 ## Key Data Flows
 
 ```
 Device → IoT Core → DynamoDB           (persistent event log via Topic Rule)
 Device → IoT Core Device Shadow        (latest snapshot, always current)
-Browser → Cognito → SigV4 → MQTT WSS  (live push updates, read-only)
+Browser → Cognito → SigV4 → MQTT WSS  (live push updates, subscribe-only)
 Browser → API Gateway → Lambda → Shadow / DynamoDB  (initial load + history)
+Browser → POST /control → Control Lambda → MQTT + Shadow  (manual occupy/free)
+Control Lambda → MQTT → Topic Rule → DynamoDB  (manual events logged like device events)
+Control Lambda → MQTT → all subscribed browsers  (live grid update via applyStatus)
 ```

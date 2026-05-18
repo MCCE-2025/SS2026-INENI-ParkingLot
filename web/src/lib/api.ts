@@ -32,3 +32,19 @@ export async function getHistory(
   const body = (await response.json()) as { items: HistoryItem[] };
   return body.items ?? [];
 }
+
+export async function postControl(
+  apiUrl: string,
+  spotId: number,
+  occupied: boolean,
+): Promise<void> {
+  const response = await fetch(`${apiBase(apiUrl)}/control`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ spot_id: spotId, occupied }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Control failed (${response.status}): ${text}`);
+  }
+}

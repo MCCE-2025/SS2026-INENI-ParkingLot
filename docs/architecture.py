@@ -33,6 +33,8 @@ EDGE_SHADOW = Edge(color="#1a9c3e", style="dashed",  label="shadow update")
 EDGE_PLAIN  = Edge(color="#555555", style="solid")
 EDGE_QUERY  = Edge(color="#555555", style="solid",   label="Query")
 EDGE_CERT   = Edge(color="#d13212", style="dotted",  label="store cert")
+EDGE_CTRL   = Edge(color="#0078d4", style="bold",    label="POST /control")
+EDGE_PUB    = Edge(color="#1a9c3e", style="bold",    label="Publish status")
 
 with Diagram(
     "Parking Lot Detector — Architecture",
@@ -75,9 +77,10 @@ with Diagram(
         # ── Web stack — API ───────────────────────────────────────────────────
         with Cluster("API  (ParkingLotWebStack)"):
             cognito = Cognito("Cognito Identity Pool\n(unauthenticated)")
-            apigw   = APIGateway("HTTP API\n(API Gateway v2)")
-            snap_fn = Lambda("GetSnapshot\n(shadow + DDB fallback)")
-            hist_fn = Lambda("GetHistory\n(1-hour DDB query)")
+            apigw    = APIGateway("HTTP API\n(API Gateway v2)")
+            snap_fn  = Lambda("GetSnapshot\n(shadow + DDB fallback)")
+            hist_fn  = Lambda("GetHistory\n(1-hour DDB query)")
+            ctrl_fn  = Lambda("Control\n(MQTT publish + shadow)")
 
         # ── Web stack — Hosting ───────────────────────────────────────────────
         with Cluster("Static Hosting  (ParkingLotWebStack)"):
@@ -101,16 +104,20 @@ with Diagram(
                     label="CreateKeysAndCertificate") >> broker
 
     # ── Edges — API Lambdas ───────────────────────────────────────────────────
-    apigw   >> EDGE_PLAIN >> snap_fn
-    apigw   >> EDGE_PLAIN >> hist_fn
-    snap_fn >> Edge(color="#1a9c3e", style="dashed",
-                    label="GetThingShadow")     >> shadow
-    snap_fn >> Edge(color="#555555", style="dotted",
-                    label="fallback Query")     >> ddb
-    hist_fn >> EDGE_QUERY                       >> ddb
+    apigw    >> EDGE_PLAIN >> snap_fn
+    apigw    >> EDGE_PLAIN >> hist_fn
+    apigw    >> EDGE_PLAIN >> ctrl_fn
+    snap_fn  >> Edge(color="#1a9c3e", style="dashed",
+                     label="GetThingShadow")     >> shadow
+    snap_fn  >> Edge(color="#555555", style="dotted",
+                     label="fallback Query")     >> ddb
+    hist_fn  >> EDGE_QUERY                        >> ddb
+    ctrl_fn  >> EDGE_PUB                          >> broker
+    ctrl_fn  >> EDGE_SHADOW                       >> shadow
 
     # ── Edges — Browser ───────────────────────────────────────────────────────
     browser >> EDGE_HTTP  >> cf
     browser >> EDGE_CREDS >> cognito
     browser >> EDGE_WSS   >> broker
     browser >> EDGE_HTTP  >> apigw
+    browser >> EDGE_CTRL  >> apigw
