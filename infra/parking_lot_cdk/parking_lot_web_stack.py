@@ -109,11 +109,15 @@ class ParkingLotWebStack(Stack):
             resources=["%s:client/parkinglot_web_*" % iot_arn],
         )
     )
+    lot_prefix = "parkinglot/%s" % lot_id
     unauth_role.add_to_policy(
         iam.PolicyStatement(
             effect=iam.Effect.ALLOW,
             actions=["iot:Subscribe"],
             resources=[
+                "%s:topicfilter/parkinglot/#" % iot_arn,
+                "%s:topicfilter/%s/status" % (iot_arn, lot_prefix),
+                "%s:topicfilter/%s/summary" % (iot_arn, lot_prefix),
                 "%s:topicfilter/parkinglot/+/status" % iot_arn,
                 "%s:topicfilter/parkinglot/+/summary" % iot_arn,
             ],
@@ -124,6 +128,9 @@ class ParkingLotWebStack(Stack):
             effect=iam.Effect.ALLOW,
             actions=["iot:Receive"],
             resources=[
+                "%s:topic/parkinglot/#" % iot_arn,
+                "%s:topic/%s/status" % (iot_arn, lot_prefix),
+                "%s:topic/%s/summary" % (iot_arn, lot_prefix),
                 "%s:topic/parkinglot/+/status" % iot_arn,
                 "%s:topic/parkinglot/+/summary" % iot_arn,
             ],

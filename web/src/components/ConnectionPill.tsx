@@ -1,10 +1,10 @@
 import type { OccupancyState } from "../types";
 
 const LABELS: Record<OccupancyState["connection"], string> = {
-  loading: "Loading…",
+  loading: "Connecting MQTT…",
   connected: "MQTT: connected",
   reconnecting: "MQTT: reconnecting",
-  "shadow-only": "Shadow snapshot only",
+  "shadow-only": "Snapshot only (no MQTT)",
   error: "Connection error",
 };
 
