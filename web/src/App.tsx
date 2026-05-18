@@ -6,6 +6,7 @@ import { SummaryTiles } from "./components/SummaryTiles";
 import { getHistory, getSnapshot, postControl } from "./lib/api";
 import { getCognitoCredentials } from "./lib/cognito";
 import { loadConfig } from "./lib/config";
+import { appendHistoryItem, historyWindow } from "./lib/history";
 import { connectParkingMqtt } from "./lib/mqtt";
 import {
   applySnapshot,
@@ -47,15 +48,6 @@ function reducer(state: OccupancyState, action: Action): OccupancyState {
   }
 }
 
-function historyWindow(): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date(to.getTime() - 15 * 60 * 1000);
-  return {
-    from: from.toISOString().replace(/\.\d{3}Z$/, "Z"),
-    to: to.toISOString().replace(/\.\d{3}Z$/, "Z"),
-  };
-}
-
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -76,7 +68,16 @@ export default function App() {
       setControlError(null);
       setPending((s) => new Set(s).add(spotId));
       try {
-        await postControl(config.apiUrl, spotId, nextOccupied);
+        const result = await postControl(config.apiUrl, spotId, nextOccupied);
+        setHistory((items) =>
+          appendHistoryItem(items, {
+            lot_id: config.lotId,
+            spot_id: result.spot_id,
+            occupied: result.occupied,
+            ts: result.ts,
+            device_id: "web_control",
+          }),
+        );
       } catch (err) {
         setControlError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -149,6 +150,7 @@ export default function App() {
             try {
               const event = JSON.parse(payload) as StatusEvent;
               dispatch({ type: "status", event });
+              setHistory((items) => appendHistoryItem(items, event));
             } catch {
               /* ignore malformed */
             }
