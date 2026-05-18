@@ -33,11 +33,18 @@ export async function getHistory(
   return body.items ?? [];
 }
 
+export interface ControlResult {
+  ok: boolean;
+  ts: string;
+  spot_id: number;
+  occupied: boolean;
+}
+
 export async function postControl(
   apiUrl: string,
   spotId: number,
   occupied: boolean,
-): Promise<void> {
+): Promise<ControlResult> {
   const response = await fetch(`${apiBase(apiUrl)}/control`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -47,4 +54,5 @@ export async function postControl(
     const text = await response.text();
     throw new Error(`Control failed (${response.status}): ${text}`);
   }
+  return (await response.json()) as ControlResult;
 }
