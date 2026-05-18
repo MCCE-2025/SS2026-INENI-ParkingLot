@@ -79,8 +79,8 @@ with Diagram(
             cognito = Cognito("Cognito Identity Pool\n(unauthenticated)")
             apigw    = APIGateway("HTTP API\n(API Gateway v2)")
             snap_fn  = Lambda("GetSnapshot\n(shadow + DDB fallback)")
-            hist_fn  = Lambda("GetHistory\n(1-hour DDB query)")
-            ctrl_fn  = Lambda("Control\n(MQTT publish + shadow)")
+            hist_fn  = Lambda("GetHistory\n(DDB time-range query)")
+            ctrl_fn  = Lambda("Control\n(source: web\nMQTT + shadow)")
 
         # ── Web stack — Hosting ───────────────────────────────────────────────
         with Cluster("Static Hosting  (ParkingLotWebStack)"):
@@ -89,8 +89,10 @@ with Diagram(
             cf >> EDGE_PLAIN >> s3
 
     # ── Edges — Device → IoT Core ─────────────────────────────────────────────
-    detector >> EDGE_MQTT >> broker
-    sim      >> EDGE_MQTT >> broker
+    detector >> Edge(color="#1a9c3e", style="bold",
+                     label="MQTT\nsource: device") >> broker
+    sim      >> Edge(color="#1a9c3e", style="bold",
+                     label="MQTT\nsource: device") >> broker
 
     # ── Edges — IoT Core internal ─────────────────────────────────────────────
     broker >> EDGE_RULE   >> rule
@@ -112,7 +114,8 @@ with Diagram(
     snap_fn  >> Edge(color="#555555", style="dotted",
                      label="fallback Query")     >> ddb
     hist_fn  >> EDGE_QUERY                        >> ddb
-    ctrl_fn  >> EDGE_PUB                          >> broker
+    ctrl_fn  >> Edge(color="#1a9c3e", style="bold",
+                     label="Publish\nsource: web") >> broker
     ctrl_fn  >> EDGE_SHADOW                       >> shadow
 
     # ── Edges — Browser ───────────────────────────────────────────────────────

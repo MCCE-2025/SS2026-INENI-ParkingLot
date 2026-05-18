@@ -331,9 +331,12 @@ Example `status` payload:
   "spot_id": 2,
   "occupied": true,
   "ts": "2026-05-17T19:34:21Z",
-  "device_id": "parking_lot_camera_01"
+  "device_id": "parking_lot_camera_01",
+  "source": "device"
 }
 ```
+
+`device_id` identifies the publisher (camera Thing name or `web_control` for manual overrides). `source` distinguishes how the event was produced: `"device"` (detector/simulator) or `"web"` (dashboard `POST /control`). The IoT topic rule persists both fields to DynamoDB via `SELECT *`.
 
 ### Device Shadow document
 
@@ -346,8 +349,8 @@ Named shadow `occupancy` (configurable via `--iot-shadow-name`):
       "lot_id": "lot_1",
       "device_id": "parking_lot_camera_01",
       "spots": {
-        "0": {"occupied": true, "ts": "2026-05-17T19:34:21Z"},
-        "1": {"occupied": false, "ts": "2026-05-17T19:34:21Z"}
+        "0": {"occupied": true, "ts": "2026-05-17T19:34:21Z", "source": "device"},
+        "1": {"occupied": false, "ts": "2026-05-17T19:34:21Z", "source": "device"}
       },
       "summary": {"free": 3, "occupied": 5, "total": 8},
       "ts": "2026-05-17T19:34:21Z"
@@ -473,7 +476,7 @@ aws dynamodb scan \
   --region eu-central-1
 ```
 
-Each row matches the MQTT `status` payload (`lot_id`, `ts`, `spot_id`, `occupied`, `device_id`). The initial occupancy snapshot and periodic summary heartbeats are **not** written to DynamoDB in this mode, matching what the cloud IoT rule persists today (only `parkinglot/+/status` events).
+Each row matches the MQTT `status` payload (`lot_id`, `ts`, `spot_id`, `occupied`, `device_id`, `source`). The initial occupancy snapshot and periodic summary heartbeats are **not** written to DynamoDB in this mode, matching what the cloud IoT rule persists today (only `parkinglot/+/status` events).
 
 | Flag | Description |
 |------|-------------|
@@ -486,14 +489,16 @@ Each row matches the MQTT `status` payload (`lot_id`, `ts`, `spot_id`, `occupied
 
 ## Web dashboard
 
-A React SPA in [`web/`](web/) shows live parking occupancy: summary tiles, a clickable per-spot grid (green = free, blue = occupied, matching the OpenCV overlay), and a history sparkline.
+A React SPA in [`web/`](web/) shows live parking occupancy: summary tiles, a clickable per-spot grid (green = free, blue = occupied, matching the OpenCV overlay), and a 15-minute history sparkline with separate **device** (solid) and **manual** (dashed) series.
+
+Spots last updated via the dashboard show a **manual** badge and dashed outline (`source: "web"`). Device-driven spots have no badge (`source: "device"`). Older shadow or DynamoDB rows without `source` are treated as device events in the UI.
 
 **Data flow:**
 
-1. On load, `GET /snapshot` reads the `occupancy` Device Shadow (same document shape as in the IoT section above).
+1. On load, `GET /snapshot` reads the `occupancy` Device Shadow (same document shape as in the IoT section above, including per-spot `source` when present).
 2. MQTT-over-WebSocket (SigV4 + Cognito Identity Pool) subscribes to `parkinglot/<lot_id>/status` and `.../summary` for live updates (read-only from the browser).
-3. `GET /history` queries `ParkingLotEvents` in DynamoDB for the sparkline.
-4. Clicking a spot calls `POST /control` with `{ spot_id, occupied }`. A **Control** Lambda publishes to `parkinglot/<lot_id>/status` and updates the Device Shadow (`device_id: web_control`). The UI updates when the MQTT status message arrives; DynamoDB records the event via the existing IoT topic rule.
+3. `GET /history` queries `ParkingLotEvents` in DynamoDB for the initial sparkline; each incoming status event (MQTT or after `POST /control`) is appended locally so the chart updates in real time.
+4. Clicking a spot calls `POST /control` with `{ spot_id, occupied }`. A **Control** Lambda publishes to `parkinglot/<lot_id>/status` (`source: "web"`, `device_id: web_control`) and updates the Device Shadow. The grid and sparkline update when the MQTT status message arrives (or immediately from the API response for history); DynamoDB records the event via the existing IoT topic rule.
 
 ### HTTP API
 
@@ -501,7 +506,7 @@ A React SPA in [`web/`](web/) shows live parking occupancy: summary tiles, a cli
 |--------|------|-------------|
 | `GET` | `/snapshot` | Latest occupancy from Device Shadow (DynamoDB fallback) |
 | `GET` | `/history?lot_id=&from=&to=` | Time-series events for the sparkline |
-| `POST` | `/control` | Manual spot override — body: `{ "spot_id": 0, "occupied": true }` |
+| `POST` | `/control` | Manual spot override — body: `{ "spot_id": 0, "occupied": true }`; response `{ "ok": true, "ts", "spot_id", "occupied" }` |
 
 Example manual override:
 
@@ -510,6 +515,8 @@ curl -X POST "$API_URL/control" \
   -H 'content-type: application/json' \
   -d '{"spot_id": 2, "occupied": true}'
 ```
+
+The published status event uses `source: "web"` and `device_id: "web_control"` so it is distinguishable from camera events in DynamoDB and in the dashboard.
 
 The Cognito unauthenticated role has **subscribe-only** MQTT access; writes go through the API so the shadow stays consistent with published status events.
 

@@ -26,6 +26,7 @@ export function appendHistoryItem(
     occupied: event.occupied,
     ts: event.ts,
     device_id: event.device_id,
+    source: event.source ?? "device",
   };
 
   const key = itemKey(item);
