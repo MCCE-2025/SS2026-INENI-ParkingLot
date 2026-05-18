@@ -49,7 +49,7 @@ function reducer(state: OccupancyState, action: Action): OccupancyState {
 
 function historyWindow(): { from: string; to: string } {
   const to = new Date();
-  const from = new Date(to.getTime() - 60 * 60 * 1000);
+  const from = new Date(to.getTime() - 15 * 60 * 1000);
   return {
     from: from.toISOString().replace(/\.\d{3}Z$/, "Z"),
     to: to.toISOString().replace(/\.\d{3}Z$/, "Z"),
