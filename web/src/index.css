@@ -144,11 +144,28 @@ body {
 }
 
 .spot {
+  border: none;
   border-radius: 10px;
   padding: 0.75rem;
   text-align: center;
   color: #fff;
   font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  width: 100%;
+}
+
+.spot:disabled {
+  cursor: wait;
+  opacity: 0.85;
+}
+
+.spot:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.spot:not(:disabled):active {
+  filter: brightness(0.95);
 }
 
 .spot--free {

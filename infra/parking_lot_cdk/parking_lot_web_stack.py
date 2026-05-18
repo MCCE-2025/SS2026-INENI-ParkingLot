@@ -24,6 +24,15 @@ _INFRA_DIR = Path(__file__).resolve().parent.parent
 _WEB_DIST = _INFRA_DIR.parent / "web" / "dist"
 
 
+def _thing_shadow_iam_resources(iot_arn: str, thing_name: str, shadow_name: str) -> list[str]:
+    """IAM ARNs for GetThingShadow / UpdateThingShadow (classic + named shadow)."""
+    resources = ["%s:thing/%s" % (iot_arn, thing_name)]
+    if shadow_name:
+        # Named shadow: arn:...:thing/<thing>/<shadowName> (not .../shadow/<name>)
+        resources.append("%s:thing/%s/%s" % (iot_arn, thing_name, shadow_name))
+    return resources
+
+
 class ParkingLotWebStack(Stack):
   def __init__(
       self,
@@ -164,7 +173,7 @@ class ParkingLotWebStack(Stack):
     get_snapshot_fn.add_to_role_policy(
         iam.PolicyStatement(
             actions=["iot:GetThingShadow"],
-            resources=["%s:thing/%s" % (iot_arn, thing_name)],
+            resources=_thing_shadow_iam_resources(iot_arn, thing_name, shadow_name),
         )
     )
     events_table.grant_read_data(get_snapshot_fn)
@@ -183,13 +192,44 @@ class ParkingLotWebStack(Stack):
     )
     events_table.grant_read_data(get_history_fn)
 
+    control_fn = lambda_.Function(
+        self,
+        "ControlFunction",
+        runtime=lambda_.Runtime.PYTHON_3_12,
+        handler="handler.handler",
+        code=lambda_.Code.from_asset(str(_INFRA_DIR / "lambdas" / "control")),
+        timeout=Duration.seconds(15),
+        environment={
+            "THING_NAME": thing_name,
+            "SHADOW_NAME": shadow_name,
+            "IOT_DATA_ENDPOINT": iot_data_endpoint,
+            "LOT_ID": lot_id,
+            "CONTROL_DEVICE_ID": "web_control",
+        },
+    )
+    control_fn.add_to_role_policy(
+        iam.PolicyStatement(
+            actions=["iot:Publish"],
+            resources=["%s:topic/parkinglot/%s/status" % (iot_arn, lot_id)],
+        )
+    )
+    control_fn.add_to_role_policy(
+        iam.PolicyStatement(
+            actions=["iot:UpdateThingShadow"],
+            resources=_thing_shadow_iam_resources(iot_arn, thing_name, shadow_name),
+        )
+    )
+
     # --- HTTP API ---
     http_api = apigwv2.HttpApi(
         self,
         "WebHttpApi",
         cors_preflight=apigwv2.CorsPreflightOptions(
             allow_origins=[web_url, "http://localhost:5173"],
-            allow_methods=[apigwv2.CorsHttpMethod.GET],
+            allow_methods=[
+                apigwv2.CorsHttpMethod.GET,
+                apigwv2.CorsHttpMethod.POST,
+            ],
             allow_headers=["*"],
         ),
     )
@@ -207,6 +247,14 @@ class ParkingLotWebStack(Stack):
         integration=apigw_integrations.HttpLambdaIntegration(
             "HistoryIntegration",
             get_history_fn,
+        ),
+    )
+    http_api.add_routes(
+        path="/control",
+        methods=[apigwv2.HttpMethod.POST],
+        integration=apigw_integrations.HttpLambdaIntegration(
+            "ControlIntegration",
+            control_fn,
         ),
     )
 

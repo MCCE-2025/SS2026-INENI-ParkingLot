@@ -3,7 +3,7 @@ import { ConnectionPill } from "./components/ConnectionPill";
 import { SparklineHistory } from "./components/SparklineHistory";
 import { SpotGrid } from "./components/SpotGrid";
 import { SummaryTiles } from "./components/SummaryTiles";
-import { getHistory, getSnapshot } from "./lib/api";
+import { getHistory, getSnapshot, postControl } from "./lib/api";
 import { getCognitoCredentials } from "./lib/cognito";
 import { loadConfig } from "./lib/config";
 import { connectParkingMqtt } from "./lib/mqtt";
@@ -65,6 +65,30 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [pending, setPending] = useState<Set<number>>(() => new Set());
+  const [controlError, setControlError] = useState<string | null>(null);
+
+  const handleToggle = useCallback(
+    async (spotId: number, nextOccupied: boolean) => {
+      if (!config) {
+        return;
+      }
+      setControlError(null);
+      setPending((s) => new Set(s).add(spotId));
+      try {
+        await postControl(config.apiUrl, spotId, nextOccupied);
+      } catch (err) {
+        setControlError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setPending((s) => {
+          const next = new Set(s);
+          next.delete(spotId);
+          return next;
+        });
+      }
+    },
+    [config],
+  );
 
   const loadHistory = useCallback(async (cfg: AppConfig) => {
     setHistoryLoading(true);
@@ -181,9 +205,14 @@ export default function App() {
       </header>
 
       {state.error ? <p className="app__error">{state.error}</p> : null}
+      {controlError ? <p className="app__error">{controlError}</p> : null}
 
       <SummaryTiles summary={state.summary} lastUpdated={state.lastUpdated} />
-      <SpotGrid spots={state.spots} />
+      <SpotGrid
+        spots={state.spots}
+        onToggle={handleToggle}
+        pending={pending}
+      />
       <SparklineHistory
         items={history}
         loading={historyLoading}
