@@ -54,7 +54,7 @@ export function SparklineHistory({ items, loading, error }: Props) {
   const buckets = bucketOccupancy(items);
   return (
     <section className="sparkline" aria-label="Occupancy history">
-      <h2 className="sparkline__title">Last hour</h2>
+      <h2 className="sparkline__title">Last 15 minutes</h2>
       {loading ? <p className="sparkline__empty">Loading history…</p> : null}
       {error ? <p className="sparkline__error">{error}</p> : null}
       {!loading && !error ? <Sparkline values={buckets} /> : null}
