@@ -1,7 +1,9 @@
-import mqtt, { type MqttClient } from "mqtt";
+/**
+ * Live MQTT via AWS IoT Device SDK v2 (browser WSS + Cognito SigV4).
+ */
+import { iot, mqtt } from "aws-iot-device-sdk-v2/dist/browser";
 import type { AppConfig } from "../types";
 import type { AwsCredentials } from "./cognito";
-import { presignIotWebSocketUrl } from "./sigv4";
 
 export interface MqttHandlers {
   onStatus: (payload: string) => void;
@@ -11,81 +13,133 @@ export interface MqttHandlers {
   onError: (message: string) => void;
 }
 
-const RECONNECT_MS = 5000;
+let connectGeneration = 0;
+
+function wsHost(iotEndpoint: string): string {
+  return iotEndpoint.replace(/^https?:\/\//, "").replace(/\/$/, "");
+}
+
+function payloadToString(payload: ArrayBuffer | ArrayBufferView): string {
+  const bytes =
+    payload instanceof ArrayBuffer
+      ? new Uint8Array(payload)
+      : new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
+  return new TextDecoder().decode(bytes);
+}
+
+function assertCredentials(creds: AwsCredentials): void {
+  if (!creds.accessKeyId || !creds.secretAccessKey || !creds.sessionToken) {
+    throw new Error(
+      "Incomplete Cognito credentials for MQTT (missing access key, secret, or session token).",
+    );
+  }
+}
 
 export function connectParkingMqtt(
   config: AppConfig,
-  credentials: AwsCredentials,
+  getCredentials: () => Promise<AwsCredentials>,
   handlers: MqttHandlers,
 ): () => void {
-  let client: MqttClient | null = null;
+  const myGen = ++connectGeneration;
   let stopped = false;
-  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let connection: mqtt.MqttClientConnection | null = null;
+  let wasConnected = false;
 
-  const connectOnce = () => {
-    if (stopped) {
-      return;
-    }
+  const isActive = () => !stopped && myGen === connectGeneration;
+  const statusTopic = `parkinglot/${config.lotId}/status`;
+  const summaryTopic = `parkinglot/${config.lotId}/summary`;
+
+  void (async () => {
     try {
-      const url = presignIotWebSocketUrl(
-        config.iotEndpoint,
-        config.region,
-        credentials,
+      const creds = await getCredentials();
+      assertCredentials(creds);
+      if (!isActive()) {
+        return;
+      }
+
+      const clientId = `parkinglot_web_${Math.random().toString(36).slice(2, 10)}`;
+      const client = new mqtt.MqttClient();
+      connection = client.new_connection(
+        iot.AwsIotMqttConnectionConfigBuilder.new_builder_for_websocket()
+          .with_endpoint(wsHost(config.iotEndpoint))
+          .with_client_id(clientId)
+          .with_clean_session(true)
+          .with_keep_alive_seconds(30)
+          .with_credentials(
+            config.region,
+            creds.accessKeyId,
+            creds.secretAccessKey,
+            creds.sessionToken,
+          )
+          .build(),
       );
-      client = mqtt.connect(url, {
-        protocol: "wss",
-        reconnectPeriod: 0,
-        connectTimeout: 15000,
-        clientId: `parkinglot_web_${Math.random().toString(36).slice(2, 10)}`,
-      });
 
-      client.on("connect", () => {
-        handlers.onConnected();
-        const statusTopic = `parkinglot/${config.lotId}/status`;
-        const summaryTopic = `parkinglot/${config.lotId}/summary`;
-        client?.subscribe([statusTopic, summaryTopic], { qos: 1 }, (err) => {
-          if (err) {
-            handlers.onError(`Subscribe failed: ${err.message}`);
-          }
-        });
-      });
-
-      client.on("message", (topic, payload) => {
-        const text = payload.toString();
-        if (topic.endsWith("/status")) {
-          handlers.onStatus(text);
-        } else if (topic.endsWith("/summary")) {
-          handlers.onSummary(text);
-        }
-      });
-
-      client.on("error", (err) => {
-        handlers.onError(err.message);
-      });
-
-      client.on("close", () => {
-        if (stopped) {
+      connection.on("interrupt", () => {
+        if (!isActive() || !wasConnected) {
           return;
         }
         handlers.onReconnecting();
-        retryTimer = setTimeout(connectOnce, RECONNECT_MS);
       });
-    } catch (err) {
-      handlers.onError(err instanceof Error ? err.message : String(err));
-      if (!stopped) {
-        handlers.onReconnecting();
-        retryTimer = setTimeout(connectOnce, RECONNECT_MS);
-      }
-    }
-  };
 
-  connectOnce();
+      connection.on("resume", () => {
+        if (!isActive()) {
+          return;
+        }
+        handlers.onConnected();
+      });
+
+      connection.on("error", (err) => {
+        if (!isActive()) {
+          return;
+        }
+        const message = err.error_name || "MQTT error";
+        if (wasConnected) {
+          handlers.onReconnecting();
+        } else {
+          handlers.onError(message);
+        }
+      });
+
+      await connection.connect();
+      if (!isActive()) {
+        return;
+      }
+
+      await connection.subscribe(
+        statusTopic,
+        mqtt.QoS.AtMostOnce,
+        (topic, payload) => {
+          if (topic === statusTopic) {
+            handlers.onStatus(payloadToString(payload));
+          }
+        },
+      );
+      await connection.subscribe(
+        summaryTopic,
+        mqtt.QoS.AtMostOnce,
+        (topic, payload) => {
+          if (topic === summaryTopic) {
+            handlers.onSummary(payloadToString(payload));
+          }
+        },
+      );
+
+      if (!isActive()) {
+        return;
+      }
+      wasConnected = true;
+      handlers.onConnected();
+    } catch (err) {
+      if (!isActive()) {
+        return;
+      }
+      handlers.onError(err instanceof Error ? err.message : String(err));
+    }
+  })();
 
   return () => {
     stopped = true;
-    if (retryTimer) {
-      clearTimeout(retryTimer);
-    }
-    client?.end(true);
+    connectGeneration += 1;
+    void connection?.disconnect();
   };
 }

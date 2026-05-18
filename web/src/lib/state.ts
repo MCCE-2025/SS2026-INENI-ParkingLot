@@ -37,8 +37,10 @@ export function applySnapshot(
   if (!reported) {
     return {
       ...state,
-      connection: "shadow-only",
-      error: "Shadow has no reported state yet.",
+      error:
+        state.connection === "connected"
+          ? null
+          : "Shadow has no reported state yet.",
     };
   }
   const spots = reported.spots ?? {};
@@ -50,7 +52,6 @@ export function applySnapshot(
     spots: { ...spots },
     summary,
     lastUpdated: reported.ts ?? new Date().toISOString(),
-    connection: state.connection === "connected" ? "connected" : "shadow-only",
     error: null,
   };
 }

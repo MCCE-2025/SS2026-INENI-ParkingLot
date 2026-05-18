@@ -28,10 +28,32 @@ async function cognitoPost(
   return (await response.json()) as Record<string, unknown>;
 }
 
+let cached:
+  | {
+      identityPoolId: string;
+      region: string;
+      credentials: AwsCredentials;
+      expiresAt: number;
+    }
+  | undefined;
+
+/** Fetch temporary AWS creds for the Cognito Identity Pool (cached ~50 min). */
 export async function getCognitoCredentials(
   identityPoolId: string,
   region: string,
+  forceRefresh = false,
 ): Promise<AwsCredentials> {
+  const now = Date.now();
+  if (
+    !forceRefresh &&
+    cached &&
+    cached.identityPoolId === identityPoolId &&
+    cached.region === region &&
+    cached.expiresAt > now
+  ) {
+    return cached.credentials;
+  }
+
   const idResponse = await cognitoPost(region, "AWSCognitoIdentityService.GetId", {
     IdentityPoolId: identityPoolId,
   });
@@ -46,10 +68,25 @@ export async function getCognitoCredentials(
     AccessKeyId: string;
     SecretKey: string;
     SessionToken: string;
+    Expiration?: string;
   };
-  return {
+
+  const credentials: AwsCredentials = {
     accessKeyId: creds.AccessKeyId,
     secretAccessKey: creds.SecretKey,
     sessionToken: creds.SessionToken,
   };
+
+  const expirationMs = creds.Expiration
+    ? new Date(creds.Expiration).getTime() - 60_000
+    : now + 50 * 60 * 1000;
+
+  cached = {
+    identityPoolId,
+    region,
+    credentials,
+    expiresAt: expirationMs,
+  };
+
+  return credentials;
 }

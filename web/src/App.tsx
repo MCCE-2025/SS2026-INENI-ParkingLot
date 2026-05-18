@@ -81,11 +81,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     let disconnectMqtt: (() => void) | undefined;
 
     (async () => {
       try {
         const cfg = await loadConfig();
+        if (cancelled) {
+          return;
+        }
         setConfig(cfg);
         dispatch({
           type: "connection",
@@ -93,16 +97,17 @@ export default function App() {
         });
 
         const doc = await getSnapshot(cfg.apiUrl);
+        if (cancelled) {
+          return;
+        }
         dispatch({ type: "snapshot", doc });
 
         void loadHistory(cfg);
 
-        const credentials = await getCognitoCredentials(
-          cfg.identityPoolId,
-          cfg.region,
-        );
+        const getCredentials = (forceRefresh = false) =>
+          getCognitoCredentials(cfg.identityPoolId, cfg.region, forceRefresh);
 
-        disconnectMqtt = connectParkingMqtt(cfg, credentials, {
+        disconnectMqtt = connectParkingMqtt(cfg, () => getCredentials(false), {
           onConnected: () => {
             dispatch({ type: "connection", connection: "connected" });
           },
@@ -112,7 +117,7 @@ export default function App() {
           onError: (message) => {
             dispatch({
               type: "connection",
-              connection: "error",
+              connection: "shadow-only",
               error: message,
             });
           },
@@ -145,6 +150,7 @@ export default function App() {
     })();
 
     return () => {
+      cancelled = true;
       disconnectMqtt?.();
     };
   }, [loadHistory]);
