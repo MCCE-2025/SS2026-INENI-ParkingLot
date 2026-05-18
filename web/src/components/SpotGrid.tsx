@@ -37,27 +37,32 @@ export function SpotGrid({ spots, onToggle, pending }: Props) {
       {indices.map((id) => {
         const spot = spots[String(id)];
         const occupied = spot.occupied;
+        const isManual = spot.source === "web";
         const isPending = pending?.has(id) ?? false;
         const nextOccupied = !occupied;
+        const statusLabel = isPending ? "…" : occupied ? "Occupied" : "Free";
+        const title = isPending
+          ? "Updating…"
+          : isManual
+            ? occupied
+              ? "Occupied (manual override) — click to mark free"
+              : "Free (manual override) — click to mark occupied"
+            : occupied
+              ? "Occupied (device) — click to mark free"
+              : "Free (device) — click to mark occupied";
+
         return (
           <button
             key={id}
             type="button"
-            className={`spot ${occupied ? "spot--occupied" : "spot--free"}`}
-            title={
-              isPending
-                ? "Updating…"
-                : occupied
-                  ? "Occupied — click to mark free"
-                  : "Free — click to mark occupied"
-            }
+            className={`spot ${occupied ? "spot--occupied" : "spot--free"}${isManual ? " spot--manual" : ""}`}
+            title={title}
             disabled={isPending}
             onClick={() => onToggle(id, nextOccupied)}
           >
+            {isManual ? <span className="spot__badge">manual</span> : null}
             <span className="spot__id">#{id}</span>
-            <span className="spot__status">
-              {isPending ? "…" : occupied ? "Occupied" : "Free"}
-            </span>
+            <span className="spot__status">{statusLabel}</span>
             <span className="spot__ago">{formatAgo(spot.ts)}</span>
           </button>
         );

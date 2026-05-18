@@ -66,7 +66,11 @@ export function applyStatus(
   const key = String(event.spot_id);
   const spots = {
     ...state.spots,
-    [key]: { occupied: event.occupied, ts: event.ts },
+    [key]: {
+      occupied: event.occupied,
+      ts: event.ts,
+      source: event.source ?? "device",
+    },
   };
   return {
     ...state,

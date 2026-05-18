@@ -1,3 +1,5 @@
+export type EventSource = "device" | "web";
+
 export interface AppConfig {
   region: string;
   iotEndpoint: string;
@@ -11,6 +13,7 @@ export interface AppConfig {
 export interface SpotState {
   occupied: boolean;
   ts: string;
+  source?: EventSource;
 }
 
 export interface Summary {
@@ -35,6 +38,7 @@ export interface StatusEvent {
   occupied: boolean;
   ts: string;
   device_id: string;
+  source?: EventSource;
 }
 
 export interface SummaryEvent {
@@ -52,6 +56,7 @@ export interface HistoryItem {
   occupied: boolean;
   ts: string;
   device_id?: string;
+  source?: EventSource;
 }
 
 export interface ShadowDocument {

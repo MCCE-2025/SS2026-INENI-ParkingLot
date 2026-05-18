@@ -5,7 +5,7 @@ detector:
 
 - IoT Thing + X.509 device certificate (private key stored in Secrets Manager)
 - IoT policy (MQTT publish + named Device Shadow `occupancy`)
-- IoT Topic Rule: `parkinglot/+/status` → DynamoDB
+- IoT Topic Rule: `parkinglot/+/status` → DynamoDB (`SELECT *` persists `source`, `device_id`, etc.)
 - DynamoDB table `ParkingLotEvents` (`lot_id` + `ts` keys)
 
 The device code in `../parking_lot/` is unchanged; this stack matches its
@@ -89,8 +89,13 @@ single-line command. See the root [`README.md`](../README.md) simulator section.
 
 - S3 + CloudFront SPA hosting
 - Cognito Identity Pool (unauthenticated) with **read-only** IoT subscribe policy
-- HTTP API: `GET /snapshot` (Device Shadow), `GET /history` (DynamoDB query)
+- HTTP API:
+  - `GET /snapshot` — GetSnapshot Lambda (Device Shadow, DynamoDB fallback)
+  - `GET /history` — GetHistory Lambda (DynamoDB time-range query)
+  - `POST /control` — Control Lambda (publish `parkinglot/<lot_id>/status` with `source: "web"` + update named shadow)
 - Runtime `config.json` injected at deploy time
+
+The Control Lambda needs `iot:Publish` on the status topic and `iot:UpdateThingShadow` on the Thing, including the **named shadow** IAM resource (`arn:...:thing/<thing>/<shadowName>`). See `_thing_shadow_iam_resources()` in `parking_lot_cdk/parking_lot_web_stack.py`.
 
 Deploy after building the frontend:
 

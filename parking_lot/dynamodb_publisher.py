@@ -166,6 +166,7 @@ class DynamodbPublisher:
             "spot_id": int(spot_id),
             "occupied": bool(occupied),
             "device_id": self.device_id,
+            "source": "device",
         }
         try:
             self._table.put_item(Item=item)

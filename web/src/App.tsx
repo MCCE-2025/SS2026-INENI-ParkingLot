@@ -76,6 +76,7 @@ export default function App() {
             occupied: result.occupied,
             ts: result.ts,
             device_id: "web_control",
+            source: "web",
           }),
         );
       } catch (err) {

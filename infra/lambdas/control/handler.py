@@ -96,6 +96,7 @@ def handler(event, context):
         "occupied": occupied,
         "ts": ts,
         "device_id": device_id,
+        "source": "web",
     }
     topic = "parkinglot/%s/status" % lot_id
 
@@ -103,7 +104,7 @@ def handler(event, context):
         "lot_id": lot_id,
         "device_id": device_id,
         "spots": {
-            str(spot_id): {"occupied": occupied, "ts": ts},
+            str(spot_id): {"occupied": occupied, "ts": ts, "source": "web"},
         },
         "ts": ts,
     }

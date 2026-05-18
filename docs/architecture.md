@@ -80,8 +80,8 @@ flowchart TB
 
         subgraph UI["Components"]
             TILES["SummaryTiles\nfree / occupied counts"]
-            GRID["SpotGrid\nper-spot status · click to toggle\n(green = free · blue = occupied)"]
-            SPARK["SparklineHistory\n1-hour occupancy chart"]
+            GRID["SpotGrid\nclick to toggle · manual badge\n(green = free · blue = occupied)"]
+            SPARK["SparklineHistory\n15-min chart\ndevice + manual lines"]
             PILL["ConnectionPill\nMQTT status badge"]
         end
 
@@ -133,22 +133,39 @@ flowchart TB
 | **IoT Core** | Topic Rule | Fans per-spot status messages into DynamoDB via a DynamoDBv2 action |
 | **DynamoDB** | ParkingLotEvents | Time-series event log (PK: `lot_id`, SK: `ts`) with TTL for auto-expiry |
 | **Lambda** | GetSnapshot | Returns Device Shadow; falls back to DynamoDB reconstruction if shadow unavailable |
-| **Lambda** | GetHistory | Queries DynamoDB for a 1-hour window to feed the sparkline chart |
-| **Lambda** | Control | Accepts manual spot overrides: publishes to `parkinglot/<lot_id>/status` and updates the Device Shadow (`device_id: web_control`) |
+| **Lambda** | GetHistory | Queries DynamoDB for a time window to bootstrap the sparkline (default 1 hour in Lambda; UI queries 15 minutes) |
+| **Lambda** | Control | Manual overrides: publishes `source: "web"` to `parkinglot/<lot_id>/status` and updates the Device Shadow (`device_id: web_control`) |
 | **Cognito** | Identity Pool | Issues temporary AWS credentials to anonymous browser users |
 | **CloudFront + S3** | Static Hosting | Serves the React SPA globally with OAC-protected S3 origin |
 | **Browser** | React SPA | Displays live spot grid, summary tiles, and sparkline via MQTT + HTTP API |
 | **Browser** | mqtt.ts | MQTT.js over SigV4-presigned WSS — subscribes to live status + summary topics (read-only) |
-| **Browser** | SpotGrid | Click a spot to call `POST /control`; UI updates when the MQTT status echo arrives |
+| **Browser** | SpotGrid | Click a spot → `POST /control`; manual spots show badge when `source === "web"` |
+| **Browser** | SparklineHistory | Dual series: device (solid) vs manual (dashed); history appended on each status event |
+
+## Status event shape
+
+Every `parkinglot/<lot_id>/status` message (device or web) includes:
+
+| Field | Device example | Web (manual) example |
+|-------|----------------|----------------------|
+| `lot_id` | `lot_1` | `lot_1` |
+| `spot_id` | `2` | `2` |
+| `occupied` | `true` | `false` |
+| `ts` | ISO 8601 UTC | ISO 8601 UTC |
+| `device_id` | `parking_lot_camera_01` | `web_control` |
+| `source` | `device` | `web` |
+
+The topic rule `SELECT *` writes all fields to DynamoDB. Per-spot entries in the Device Shadow also carry `source` when updated.
 
 ## Key Data Flows
 
 ```
-Device → IoT Core → DynamoDB           (persistent event log via Topic Rule)
-Device → IoT Core Device Shadow        (latest snapshot, always current)
-Browser → Cognito → SigV4 → MQTT WSS  (live push updates, subscribe-only)
-Browser → API Gateway → Lambda → Shadow / DynamoDB  (initial load + history)
-Browser → POST /control → Control Lambda → MQTT + Shadow  (manual occupy/free)
-Control Lambda → MQTT → Topic Rule → DynamoDB  (manual events logged like device events)
-Control Lambda → MQTT → all subscribed browsers  (live grid update via applyStatus)
+Device (source: device) → IoT Core → DynamoDB     (event log via Topic Rule)
+Device → IoT Core Device Shadow                     (latest snapshot)
+Browser → Cognito → SigV4 → MQTT WSS               (subscribe-only live updates)
+Browser → GET /snapshot, /history → Lambda          (initial load)
+Browser → POST /control → Control Lambda            (source: web → MQTT + Shadow)
+Control → MQTT → Topic Rule → DynamoDB              (manual rows with source: web)
+Control → MQTT → browsers                           (grid + sparkline via applyStatus)
+Browser appends status events to local history       (sparkline updates without refetch)
 ```

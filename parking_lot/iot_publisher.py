@@ -198,6 +198,7 @@ class IoTPublisher:
             "occupied": bool(occupied),
             "ts": ts,
             "device_id": self.client_id,
+            "source": "device",
         }
         topic = "parkinglot/%s/status" % self.lot_id
         self._publish_json(topic, payload)
@@ -206,7 +207,11 @@ class IoTPublisher:
             "lot_id": self.lot_id,
             "device_id": self.client_id,
             "spots": {
-                str(spot_id): {"occupied": bool(occupied), "ts": ts},
+                str(spot_id): {
+                    "occupied": bool(occupied),
+                    "ts": ts,
+                    "source": "device",
+                },
             },
             "ts": ts,
         }
@@ -226,6 +231,7 @@ class IoTPublisher:
             spots[str(index)] = {
                 "occupied": not bool(status),
                 "ts": ts,
+                "source": "device",
             }
 
         summary = _summary_from_statuses(statuses)
