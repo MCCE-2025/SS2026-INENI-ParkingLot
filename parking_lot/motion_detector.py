@@ -174,7 +174,7 @@ class MotionDetector:
 
                 color = COLOR_GREEN if statuses[index] else COLOR_BLUE
                 draw_contours(
-                    new_frame, coordinates, str(p["id"] + 1), COLOR_WHITE, color
+                    new_frame, coordinates, str(p["id"]), COLOR_WHITE, color
                 )
 
             if self.publisher is not None:

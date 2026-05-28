@@ -111,7 +111,7 @@ class CoordinatesGenerator:
         draw_contours(
             self.image,
             np.array(self.coordinates),
-            str(spot_id + 1),
+            str(spot_id),
             COLOR_WHITE,
         )
 
@@ -156,7 +156,7 @@ class CoordinatesGenerator:
             open_cv.line(self.image, tuple(pts[1]), tuple(pts[2]), (255, 0, 0), 1)
             open_cv.line(self.image, tuple(pts[2]), tuple(pts[3]), self.color, 1)
             open_cv.line(self.image, tuple(pts[3]), tuple(pts[0]), self.color, 1)
-            draw_contours(self.image, pts, str(spot["id"] + 1), COLOR_WHITE)
+            draw_contours(self.image, pts, str(spot["id"]), COLOR_WHITE)
         open_cv.imshow(self.caption, self.image)
 
     # ------------------------------------------------------------------
