@@ -2,6 +2,7 @@ import cv2 as open_cv
 import numpy as np
 import yaml
 from colors import COLOR_WHITE
+from display_window import setup_display_window
 from drawing_utils import draw_contours
 
 # Hotkey help shown in the upper-left of the marking window.
@@ -47,7 +48,8 @@ class CoordinatesGenerator:
         # All completed spots: list of {"id": int, "coordinates": [[x,y], ...]}.
         self.spots = []
 
-        open_cv.namedWindow(self.caption, open_cv.WINDOW_GUI_EXPANDED)
+        frame_h, frame_w = self.original_image.shape[:2]
+        setup_display_window(self.caption, frame_w, frame_h)
         open_cv.setMouseCallback(self.caption, self.__mouse_callback)
 
     def generate(self, keep_window_open=False):
