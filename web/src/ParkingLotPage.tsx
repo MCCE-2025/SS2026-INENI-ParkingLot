@@ -53,10 +53,13 @@ function reducer(state: OccupancyState, action: Action): OccupancyState {
 
 function shouldApplyStatus(event: StatusEvent, captureMode: CaptureMode): boolean {
   const source = event.source ?? "device";
-  if (captureMode === "web" && source === "truth") {
-    return false;
+  if (captureMode === "truth") {
+    // Ground truth grid reflects only manually captured truth labels, so
+    // ignore live device detections and web manual overrides on this page.
+    return source === "truth";
   }
-  return true;
+  // Dashboard shows live/manual occupancy and must not be touched by truth labels.
+  return source !== "truth";
 }
 
 interface Props {
