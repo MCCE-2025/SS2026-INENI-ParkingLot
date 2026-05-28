@@ -1,4 +1,4 @@
-export type EventSource = "device" | "web";
+export type EventSource = "device" | "web" | "truth";
 
 export interface AppConfig {
   region: string;

@@ -307,6 +307,7 @@ class ParkingLotWebStack(Stack):
 
     # --- Outputs ---
     CfnOutput(self, "WebUrl", value=web_url)
+    CfnOutput(self, "TruthCaptureUrl", value="%s/truth" % web_url)
     CfnOutput(self, "ApiUrl", value=api_url)
     CfnOutput(self, "IdentityPoolId", value=identity_pool.ref)
     CfnOutput(self, "SpaBucketName", value=spa_bucket.bucket_name)

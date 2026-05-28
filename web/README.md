@@ -7,6 +7,7 @@ React + Vite SPA for real-time occupancy. Deployed by `ParkingLotWebStack` (S3 +
 - **Summary tiles** — free / occupied counts and last update time
 - **Spot grid** — click a spot to toggle occupied/free via `POST /control`; green = free, blue = occupied (matches the OpenCV overlay)
 - **Manual overrides** — spots updated from the dashboard show a **manual** badge and dashed outline (`source: "web"` in MQTT/DynamoDB)
+- **Ground truth capture** — open `/truth` on the same URL to label actual occupancy during testing (`source: "truth"` in DynamoDB; does not update Device Shadow)
 - **Sparkline** — last 15 minutes of occupancy; solid line = device events, dashed line = manual overrides
 - **Live MQTT** — subscribe-only WSS connection (SigV4 + Cognito); grid and history update on each status message
 
@@ -52,7 +53,7 @@ React + Vite SPA for real-time occupancy. Deployed by `ParkingLotWebStack` (S3 +
    npm run dev
    ```
 
-   Open http://localhost:5173. The dev server serves `public/config.json`; API and IoT calls go to AWS (CORS allows `localhost:5173`).
+   Open http://localhost:5173 for the dashboard, or http://localhost:5173/truth for ground-truth capture. The dev server serves `public/config.json`; API and IoT calls go to AWS (CORS allows `localhost:5173`).
 
 ## HTTP API (used by the SPA)
 
@@ -60,9 +61,11 @@ React + Vite SPA for real-time occupancy. Deployed by `ParkingLotWebStack` (S3 +
 |--------|------|---------|
 | `GET` | `/snapshot` | Initial occupancy from Device Shadow |
 | `GET` | `/history?lot_id=&from=&to=` | Event log for sparkline bootstrap |
-| `POST` | `/control` | Manual override: `{ "spot_id": number, "occupied": boolean }` |
+| `POST` | `/control` | Override: `{ "spot_id": number, "occupied": boolean, "source"?: "web" \| "truth" }` |
 
-Manual control publishes `source: "web"` and `device_id: "web_control"`. Device/simulator events use `source: "device"` and the Thing name as `device_id`.
+Dashboard (`/`) sends `source: "web"` and `device_id: "web_control"` (updates shadow). Ground truth (`/truth`) sends `source: "truth"` and `device_id: "truth_capture"` (MQTT → DynamoDB only). Device/simulator events use `source: "device"` and the Thing name as `device_id`.
+
+After deploy, CloudFormation outputs `TruthCaptureUrl` (`{WebUrl}/truth`).
 
 ## Production build
 
