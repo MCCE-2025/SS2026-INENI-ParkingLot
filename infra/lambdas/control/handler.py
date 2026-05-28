@@ -63,7 +63,11 @@ def _validate_body(body):
     if not isinstance(occupied, bool):
         return None, "occupied must be a boolean"
 
-    return {"spot_id": spot_id, "occupied": occupied}, None
+    source = body.get("source", "web")
+    if source not in ("web", "truth"):
+        return None, "source must be 'web' or 'truth'"
+
+    return {"spot_id": spot_id, "occupied": occupied, "source": source}, None
 
 
 def handler(event, context):
@@ -84,7 +88,11 @@ def handler(event, context):
     lot_id = os.environ.get("LOT_ID", "lot_1")
     thing_name = os.environ["THING_NAME"]
     shadow_name = os.environ.get("SHADOW_NAME", "").strip()
-    device_id = os.environ.get("CONTROL_DEVICE_ID", "web_control")
+    source = validated["source"]
+    if source == "truth":
+        device_id = os.environ.get("CONTROL_TRUTH_DEVICE_ID", "truth_capture")
+    else:
+        device_id = os.environ.get("CONTROL_DEVICE_ID", "web_control")
 
     spot_id = validated["spot_id"]
     occupied = validated["occupied"]
@@ -96,19 +104,9 @@ def handler(event, context):
         "occupied": occupied,
         "ts": ts,
         "device_id": device_id,
-        "source": "web",
+        "source": source,
     }
     topic = "parkinglot/%s/status" % lot_id
-
-    shadow_reported = {
-        "lot_id": lot_id,
-        "device_id": device_id,
-        "spots": {
-            str(spot_id): {"occupied": occupied, "ts": ts, "source": "web"},
-        },
-        "ts": ts,
-    }
-    shadow_payload = json.dumps({"state": {"reported": shadow_reported}})
 
     client = _iot_data_client()
 
@@ -127,19 +125,32 @@ def handler(event, context):
             },
         )
 
-    shadow_kwargs = {"thingName": thing_name, "payload": shadow_payload}
-    if shadow_name:
-        shadow_kwargs["shadowName"] = shadow_name
-
-    try:
-        client.update_thing_shadow(**shadow_kwargs)
-    except ClientError as exc:
-        return _response(
-            500,
-            {
-                "error": "Published status but failed to update shadow",
-                "code": exc.response.get("Error", {}).get("Code", ""),
+    if source == "web":
+        shadow_reported = {
+            "lot_id": lot_id,
+            "device_id": device_id,
+            "spots": {
+                str(spot_id): {"occupied": occupied, "ts": ts, "source": "web"},
             },
-        )
+            "ts": ts,
+        }
+        shadow_payload = json.dumps({"state": {"reported": shadow_reported}})
+        shadow_kwargs = {"thingName": thing_name, "payload": shadow_payload}
+        if shadow_name:
+            shadow_kwargs["shadowName"] = shadow_name
 
-    return _response(200, {"ok": True, "ts": ts, "spot_id": spot_id, "occupied": occupied})
+        try:
+            client.update_thing_shadow(**shadow_kwargs)
+        except ClientError as exc:
+            return _response(
+                500,
+                {
+                    "error": "Published status but failed to update shadow",
+                    "code": exc.response.get("Error", {}).get("Code", ""),
+                },
+            )
+
+    return _response(
+        200,
+        {"ok": True, "ts": ts, "spot_id": spot_id, "occupied": occupied, "source": source},
+    )

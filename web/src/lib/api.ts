@@ -1,4 +1,4 @@
-import type { HistoryItem, ShadowDocument } from "../types";
+import type { EventSource, HistoryItem, ShadowDocument } from "../types";
 
 function apiBase(apiUrl: string): string {
   return apiUrl.replace(/\/$/, "");
@@ -44,11 +44,12 @@ export async function postControl(
   apiUrl: string,
   spotId: number,
   occupied: boolean,
+  source: EventSource = "web",
 ): Promise<ControlResult> {
   const response = await fetch(`${apiBase(apiUrl)}/control`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ spot_id: spotId, occupied }),
+    body: JSON.stringify({ spot_id: spotId, occupied, source }),
   });
   if (!response.ok) {
     const text = await response.text();
