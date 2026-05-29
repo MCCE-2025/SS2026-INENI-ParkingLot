@@ -5,6 +5,7 @@ const LABELS: Record<OccupancyState["connection"], string> = {
   connected: "MQTT: connected",
   reconnecting: "MQTT: reconnecting",
   "shadow-only": "Snapshot only (no MQTT)",
+  disconnected: "MQTT: disconnected",
   error: "Connection error",
 };
 
@@ -13,6 +14,7 @@ const CLASS: Record<OccupancyState["connection"], string> = {
   connected: "pill pill--ok",
   reconnecting: "pill pill--warn",
   "shadow-only": "pill pill--muted",
+  disconnected: "pill pill--muted",
   error: "pill pill--error",
 };
 

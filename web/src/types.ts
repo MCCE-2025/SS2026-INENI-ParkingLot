@@ -28,7 +28,13 @@ export interface OccupancyState {
   spots: Record<string, SpotState>;
   summary: Summary;
   lastUpdated: string;
-  connection: "loading" | "connected" | "reconnecting" | "shadow-only" | "error";
+  connection:
+    | "loading"
+    | "connected"
+    | "reconnecting"
+    | "shadow-only"
+    | "disconnected"
+    | "error";
   error: string | null;
 }
 

@@ -48,15 +48,35 @@ body {
   gap: 0.75rem;
 }
 
-.app__nav a {
-  color: #2563eb;
-  font-size: 0.9rem;
-  font-weight: 600;
-  text-decoration: none;
+.app__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.app__nav a:hover {
-  text-decoration: underline;
+.app__nav-link {
+  display: inline-block;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #2563eb;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app__nav-link:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.app__nav-link--active {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+  color: #3730a3;
 }
 
 .app__header h1 {
@@ -315,4 +335,226 @@ body {
 
 .sparkline__error {
   color: #b91c1c;
+}
+
+.mqtt-console {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+  margin-top: 1.5rem;
+}
+
+.mqtt-console__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.mqtt-console__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.mqtt-console__meta {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.mqtt-console__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mqtt-console__btn {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+  border-radius: 6px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.mqtt-console__btn:hover {
+  background: #f1f5f9;
+}
+
+.mqtt-console__btn--primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.mqtt-console__btn--primary:hover {
+  background: #1d4ed8;
+}
+
+.mqtt-console__btn--warn {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.mqtt-console__btn--warn:hover {
+  background: #fde68a;
+}
+
+.mqtt-console__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.mqtt-console__filter-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-right: 0.25rem;
+}
+
+.mqtt-console__filter-label:not(:first-child) {
+  margin-left: 0.5rem;
+}
+
+.mqtt-console__chip {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-transform: lowercase;
+}
+
+.mqtt-console__chip--active {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+  color: #3730a3;
+}
+
+.mqtt-console__list {
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mqtt-console__empty {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.mqtt-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  background: #f8fafc;
+}
+
+.mqtt-row--in {
+  border-left: 3px solid #16a34a;
+}
+
+.mqtt-row--out {
+  border-left: 3px solid #d97706;
+}
+
+.mqtt-row--error {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.mqtt-row__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.mqtt-row__direction {
+  font-weight: 700;
+  color: #334155;
+}
+
+.mqtt-row__topic {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #475569;
+  word-break: break-all;
+}
+
+.mqtt-row__qos,
+.mqtt-row__time {
+  color: #64748b;
+}
+
+.mqtt-row__time {
+  margin-left: auto;
+}
+
+.mqtt-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.mqtt-badge--status {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.mqtt-badge--summary {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.mqtt-badge--control {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.mqtt-badge--system {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.mqtt-row__details {
+  margin-top: 0.35rem;
+}
+
+.mqtt-row__summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.mqtt-row__payload {
+  margin: 0.35rem 0 0;
+  padding: 0.5rem;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
