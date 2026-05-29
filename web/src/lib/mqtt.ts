@@ -8,6 +8,7 @@ import type { AwsCredentials } from "./cognito";
 export interface MqttHandlers {
   onStatus: (payload: string) => void;
   onSummary: (payload: string) => void;
+  onMessage?: (topic: string, payload: string, qos: number) => void;
   onConnected: () => void;
   onReconnecting: () => void;
   onError: (message: string) => void;
@@ -105,24 +106,23 @@ export function connectParkingMqtt(
         return;
       }
 
-      await connection.subscribe(
-        statusTopic,
-        mqtt.QoS.AtMostOnce,
-        (topic, payload) => {
-          if (topic === statusTopic) {
-            handlers.onStatus(payloadToString(payload));
-          }
-        },
-      );
-      await connection.subscribe(
-        summaryTopic,
-        mqtt.QoS.AtMostOnce,
-        (topic, payload) => {
-          if (topic === summaryTopic) {
-            handlers.onSummary(payloadToString(payload));
-          }
-        },
-      );
+      const statusQos = mqtt.QoS.AtMostOnce;
+      const summaryQos = mqtt.QoS.AtMostOnce;
+
+      await connection.subscribe(statusTopic, statusQos, (topic, payload) => {
+        const text = payloadToString(payload);
+        handlers.onMessage?.(topic, text, statusQos);
+        if (topic === statusTopic) {
+          handlers.onStatus(text);
+        }
+      });
+      await connection.subscribe(summaryTopic, summaryQos, (topic, payload) => {
+        const text = payloadToString(payload);
+        handlers.onMessage?.(topic, text, summaryQos);
+        if (topic === summaryTopic) {
+          handlers.onSummary(text);
+        }
+      });
 
       if (!isActive()) {
         return;

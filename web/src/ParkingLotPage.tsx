@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useReducer, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { ConnectionPill } from "./components/ConnectionPill";
+import { MqttConsole } from "./components/MqttConsole";
 import { SparklineHistory } from "./components/SparklineHistory";
 import { SpotGrid } from "./components/SpotGrid";
 import { SummaryTiles } from "./components/SummaryTiles";
@@ -10,6 +11,12 @@ import { loadConfig } from "./lib/config";
 import { appendHistoryItem, historyWindow } from "./lib/history";
 import type { CaptureMode } from "./lib/mode";
 import { connectParkingMqtt } from "./lib/mqtt";
+import {
+  appendLog,
+  kindFromTopic,
+  nextLogId,
+  type MqttLogEntry,
+} from "./lib/mqttLog";
 import {
   applySnapshot,
   applyStatus,
@@ -54,12 +61,19 @@ function reducer(state: OccupancyState, action: Action): OccupancyState {
 function shouldApplyStatus(event: StatusEvent, captureMode: CaptureMode): boolean {
   const source = event.source ?? "device";
   if (captureMode === "truth") {
-    // Ground truth grid reflects only manually captured truth labels, so
-    // ignore live device detections and web manual overrides on this page.
     return source === "truth";
   }
-  // Dashboard shows live/manual occupancy and must not be touched by truth labels.
   return source !== "truth";
+}
+
+function systemLog(raw: string, ok = true): Omit<MqttLogEntry, "id" | "ts"> {
+  return {
+    direction: "in",
+    kind: "system",
+    topic: "—",
+    raw,
+    ok,
+  };
 }
 
 interface Props {
@@ -67,6 +81,9 @@ interface Props {
 }
 
 export function ParkingLotPage({ captureMode }: Props) {
+  const [searchParams] = useSearchParams();
+  const debugMode = searchParams.get("debug") === "1";
+
   const isTruth = captureMode === "truth";
   const controlSource: EventSource = isTruth ? "truth" : "web";
   const controlDeviceId = isTruth ? "truth_capture" : "web_control";
@@ -81,6 +98,51 @@ export function ParkingLotPage({ captureMode }: Props) {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [pending, setPending] = useState<Set<number>>(() => new Set());
   const [controlError, setControlError] = useState<string | null>(null);
+  const [mqttLog, setMqttLog] = useState<MqttLogEntry[]>([]);
+  const [mqttConnectKey, setMqttConnectKey] = useState(0);
+  const [mqttManuallyDisconnected, setMqttManuallyDisconnected] = useState(false);
+
+  const disconnectMqttRef = useRef<(() => void) | null>(null);
+
+  const pushLog = useCallback((partial: Omit<MqttLogEntry, "id" | "ts">) => {
+    const entry: MqttLogEntry = {
+      id: nextLogId(),
+      ts: new Date().toISOString(),
+      ...partial,
+    };
+    setMqttLog((entries) => appendLog(entries, entry));
+  }, []);
+
+  const clearLog = useCallback(() => {
+    setMqttLog([]);
+  }, []);
+
+  const handleDisconnectMqtt = useCallback(() => {
+    disconnectMqttRef.current?.();
+    disconnectMqttRef.current = null;
+    setMqttManuallyDisconnected(true);
+    dispatch({ type: "connection", connection: "disconnected" });
+    pushLog({
+      direction: "out",
+      kind: "system",
+      topic: "—",
+      raw: "Manual MQTT disconnect",
+      ok: true,
+    });
+  }, [pushLog]);
+
+  const handleReconnectMqtt = useCallback(() => {
+    setMqttManuallyDisconnected(false);
+    setMqttConnectKey((key) => key + 1);
+    dispatch({ type: "connection", connection: "loading" });
+    pushLog({
+      direction: "out",
+      kind: "system",
+      topic: "—",
+      raw: "Manual MQTT reconnect requested",
+      ok: true,
+    });
+  }, [pushLog]);
 
   const handleToggle = useCallback(
     async (spotId: number, nextOccupied: boolean) => {
@@ -89,6 +151,22 @@ export function ParkingLotPage({ captureMode }: Props) {
       }
       setControlError(null);
       setPending((s) => new Set(s).add(spotId));
+
+      const controlBody = {
+        spot_id: spotId,
+        occupied: nextOccupied,
+        source: controlSource,
+      };
+      if (debugMode) {
+        pushLog({
+          direction: "out",
+          kind: "control",
+          topic: `parkinglot/${config.lotId}/status`,
+          raw: JSON.stringify(controlBody, null, 2),
+          ok: true,
+        });
+      }
+
       try {
         const result = await postControl(
           config.apiUrl,
@@ -120,7 +198,17 @@ export function ParkingLotPage({ captureMode }: Props) {
           });
         }
       } catch (err) {
-        setControlError(err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        setControlError(message);
+        if (debugMode) {
+          pushLog({
+            direction: "out",
+            kind: "control",
+            topic: `parkinglot/${config.lotId}/status`,
+            raw: `Control failed: ${message}`,
+            ok: false,
+          });
+        }
       } finally {
         setPending((s) => {
           const next = new Set(s);
@@ -129,7 +217,7 @@ export function ParkingLotPage({ captureMode }: Props) {
         });
       }
     },
-    [config, controlSource, controlDeviceId, isTruth],
+    [config, controlSource, controlDeviceId, isTruth, debugMode, pushLog],
   );
 
   const loadHistory = useCallback(
@@ -154,7 +242,6 @@ export function ParkingLotPage({ captureMode }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    let disconnectMqtt: (() => void) | undefined;
 
     (async () => {
       try {
@@ -163,59 +250,14 @@ export function ParkingLotPage({ captureMode }: Props) {
           return;
         }
         setConfig(cfg);
-        dispatch({
-          type: "connection",
-          connection: "loading",
-        });
+        dispatch({ type: "connection", connection: "loading" });
 
         const doc = await getSnapshot(cfg.apiUrl);
         if (cancelled) {
           return;
         }
         dispatch({ type: "snapshot", doc });
-
         void loadHistory(cfg);
-
-        const getCredentials = (forceRefresh = false) =>
-          getCognitoCredentials(cfg.identityPoolId, cfg.region, forceRefresh);
-
-        disconnectMqtt = connectParkingMqtt(cfg, () => getCredentials(false), {
-          onConnected: () => {
-            dispatch({ type: "connection", connection: "connected" });
-          },
-          onReconnecting: () => {
-            dispatch({ type: "connection", connection: "reconnecting" });
-          },
-          onError: (message) => {
-            dispatch({
-              type: "connection",
-              connection: "shadow-only",
-              error: message,
-            });
-          },
-          onStatus: (payload) => {
-            try {
-              const event = JSON.parse(payload) as StatusEvent;
-              if (!shouldApplyStatus(event, captureMode)) {
-                return;
-              }
-              dispatch({ type: "status", event });
-              if (!isTruth) {
-                setHistory((items) => appendHistoryItem(items, event));
-              }
-            } catch {
-              /* ignore malformed */
-            }
-          },
-          onSummary: (payload) => {
-            try {
-              const event = JSON.parse(payload) as SummaryEvent;
-              dispatch({ type: "summary", event });
-            } catch {
-              /* ignore malformed */
-            }
-          },
-        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setBootError(message);
@@ -229,9 +271,114 @@ export function ParkingLotPage({ captureMode }: Props) {
 
     return () => {
       cancelled = true;
-      disconnectMqtt?.();
     };
-  }, [loadHistory, captureMode, isTruth]);
+  }, [loadHistory]);
+
+  useEffect(() => {
+    if (!config || mqttManuallyDisconnected) {
+      return;
+    }
+
+    let cancelled = false;
+    let disconnectMqtt: (() => void) | undefined;
+    const cfg = config;
+
+    const getCredentials = (forceRefresh = false) =>
+      getCognitoCredentials(cfg.identityPoolId, cfg.region, forceRefresh);
+
+    disconnectMqtt = connectParkingMqtt(cfg, () => getCredentials(false), {
+      onConnected: () => {
+        if (cancelled) {
+          return;
+        }
+        dispatch({ type: "connection", connection: "connected" });
+        if (debugMode) {
+          pushLog(systemLog("MQTT connected"));
+        }
+      },
+      onReconnecting: () => {
+        if (cancelled) {
+          return;
+        }
+        dispatch({ type: "connection", connection: "reconnecting" });
+        if (debugMode) {
+          pushLog(systemLog("MQTT reconnecting"));
+        }
+      },
+      onError: (message) => {
+        if (cancelled) {
+          return;
+        }
+        dispatch({
+          type: "connection",
+          connection: "shadow-only",
+          error: message,
+        });
+        if (debugMode) {
+          pushLog(systemLog(`MQTT error: ${message}`, false));
+        }
+      },
+      onMessage: (topic, payload, qos) => {
+        if (!debugMode) {
+          return;
+        }
+        let ok = true;
+        try {
+          JSON.parse(payload);
+        } catch {
+          ok = false;
+        }
+        pushLog({
+          direction: "in",
+          kind: kindFromTopic(topic, cfg.lotId),
+          topic,
+          qos,
+          raw: payload,
+          ok,
+        });
+      },
+      onStatus: (payload) => {
+        try {
+          const event = JSON.parse(payload) as StatusEvent;
+          if (!shouldApplyStatus(event, captureMode)) {
+            return;
+          }
+          dispatch({ type: "status", event });
+          if (!isTruth) {
+            setHistory((items) => appendHistoryItem(items, event));
+          }
+        } catch {
+          /* malformed payloads logged via onMessage in debug mode */
+        }
+      },
+      onSummary: (payload) => {
+        try {
+          const event = JSON.parse(payload) as SummaryEvent;
+          dispatch({ type: "summary", event });
+        } catch {
+          /* malformed payloads logged via onMessage in debug mode */
+        }
+      },
+    });
+
+    disconnectMqttRef.current = disconnectMqtt;
+
+    return () => {
+      cancelled = true;
+      disconnectMqtt?.();
+      if (disconnectMqttRef.current === disconnectMqtt) {
+        disconnectMqttRef.current = null;
+      }
+    };
+  }, [
+    config,
+    mqttConnectKey,
+    mqttManuallyDisconnected,
+    captureMode,
+    isTruth,
+    debugMode,
+    pushLog,
+  ]);
 
   if (bootError && !config) {
     return (
@@ -244,6 +391,8 @@ export function ParkingLotPage({ captureMode }: Props) {
       </main>
     );
   }
+
+  const mqttConnected = state.connection === "connected";
 
   return (
     <main className={`app${isTruth ? " app--truth" : ""}`}>
@@ -270,6 +419,12 @@ export function ParkingLotPage({ captureMode }: Props) {
             ) : (
               <Link to="/truth">Ground truth</Link>
             )}
+            {!isTruth && !debugMode ? (
+              <Link to="/?debug=1">MQTT debug</Link>
+            ) : null}
+            {debugMode && !isTruth ? (
+              <Link to="/">Exit debug</Link>
+            ) : null}
           </nav>
           <ConnectionPill connection={state.connection} />
         </div>
@@ -290,6 +445,16 @@ export function ParkingLotPage({ captureMode }: Props) {
           items={history}
           loading={historyLoading}
           error={historyError}
+        />
+      ) : null}
+      {debugMode && !isTruth ? (
+        <MqttConsole
+          entries={mqttLog}
+          mqttConnected={mqttConnected}
+          mqttManuallyDisconnected={mqttManuallyDisconnected}
+          onClear={clearLog}
+          onDisconnect={handleDisconnectMqtt}
+          onReconnect={handleReconnectMqtt}
         />
       ) : null}
     </main>
