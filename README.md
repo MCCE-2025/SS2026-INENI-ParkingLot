@@ -534,10 +534,12 @@ From the repository root:
 cd infra
 uv sync --all-groups
 cdk deploy ParkingLotStack          # if not already deployed
-uv run python scripts/deploy_web.py # npm build + cdk deploy ParkingLotWebStack
+uv run python scripts/deploy_web.py # npm build + cdk deploy DNS + web stacks
 ```
 
-Stack outputs include **`WebUrl`** (CloudFront) and **`ApiUrl`** (HTTP API). Open `WebUrl` in a browser.
+**Custom domain (`parkinglot.werschlan.at`):** the first deploy creates `ParkingLotDnsStack` in `us-east-1` (Route 53 hosted zone + ACM certificate). Copy the **`NameServers`** output and add NS records for `parkinglot.werschlan.at` at the parent zone (`werschlan.at`). After delegation propagates and the certificate is issued, redeploy (or run `deploy_web.py` again). Subsequent deploys can use `--skip-dns` if only the web stack changed.
+
+Stack outputs include **`WebUrl`** (custom domain when configured), **`CloudFrontUrl`**, and **`ApiUrl`** (HTTP API). Open `WebUrl` in a browser.
 
 To drive live updates without a camera:
 

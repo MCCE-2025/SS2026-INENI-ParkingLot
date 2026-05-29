@@ -9,10 +9,13 @@ from aws_cdk import (
     Stack,
     aws_apigatewayv2 as apigwv2,
     aws_apigatewayv2_integrations as apigw_integrations,
+    aws_certificatemanager as acm,
     aws_cognito as cognito,
     aws_dynamodb as dynamodb,
     aws_iam as iam,
     aws_lambda as lambda_,
+    aws_route53 as route53,
+    aws_route53_targets as route53_targets,
     aws_s3 as s3,
     aws_s3_deployment as s3deploy,
 )
@@ -44,6 +47,9 @@ class ParkingLotWebStack(Stack):
       thing_name: str,
       shadow_name: str,
       lot_id: str = "lot_1",
+      domain_name: str | None = None,
+      certificate_arn: str | None = None,
+      hosted_zone_id: str | None = None,
       **kwargs,
   ) -> None:
     super().__init__(scope, construct_id, **kwargs)
@@ -62,31 +68,68 @@ class ParkingLotWebStack(Stack):
         enforce_ssl=True,
     )
 
-    distribution = cloudfront.Distribution(
-        self,
-        "SpaDistribution",
-        default_behavior=cloudfront.BehaviorOptions(
+    use_custom_domain = (
+        domain_name is not None
+        and certificate_arn is not None
+        and hosted_zone_id is not None
+    )
+    spa_error_responses = [
+        cloudfront.ErrorResponse(
+            http_status=403,
+            response_http_status=200,
+            response_page_path="/index.html",
+            ttl=Duration.seconds(0),
+        ),
+        cloudfront.ErrorResponse(
+            http_status=404,
+            response_http_status=200,
+            response_page_path="/index.html",
+            ttl=Duration.seconds(0),
+        ),
+    ]
+
+    distribution_props = {
+        "default_behavior": cloudfront.BehaviorOptions(
             origin=origins.S3BucketOrigin.with_origin_access_control(spa_bucket),
             viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         ),
-        default_root_object="index.html",
-        error_responses=[
-            cloudfront.ErrorResponse(
-                http_status=403,
-                response_http_status=200,
-                response_page_path="/index.html",
-                ttl=Duration.seconds(0),
-            ),
-            cloudfront.ErrorResponse(
-                http_status=404,
-                response_http_status=200,
-                response_page_path="/index.html",
-                ttl=Duration.seconds(0),
-            ),
-        ],
+        "default_root_object": "index.html",
+        "error_responses": spa_error_responses,
+    }
+    if use_custom_domain:
+        distribution_props["domain_names"] = [domain_name]
+        distribution_props["certificate"] = acm.Certificate.from_certificate_arn(
+            self,
+            "SpaCertificate",
+            certificate_arn,
+        )
+
+    distribution = cloudfront.Distribution(
+        self,
+        "SpaDistribution",
+        **distribution_props,
     )
 
-    web_url = "https://%s" % distribution.distribution_domain_name
+    if use_custom_domain:
+        hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
+            self,
+            "ImportedWebZone",
+            hosted_zone_id=hosted_zone_id,
+            zone_name=domain_name,
+        )
+        route53.ARecord(
+            self,
+            "SpaAliasRecord",
+            zone=hosted_zone,
+            target=route53.RecordTarget.from_alias(
+                route53_targets.CloudFrontTarget(distribution),
+            ),
+        )
+        web_url = "https://%s" % domain_name
+    else:
+        web_url = "https://%s" % distribution.distribution_domain_name
+
+    cloudfront_url = "https://%s" % distribution.distribution_domain_name
 
     # --- Cognito Identity Pool (unauthenticated, read-only IoT) ---
     identity_pool = cognito.CfnIdentityPool(
@@ -225,7 +268,11 @@ class ParkingLotWebStack(Stack):
         self,
         "WebHttpApi",
         cors_preflight=apigwv2.CorsPreflightOptions(
-            allow_origins=[web_url, "http://localhost:5173"],
+            allow_origins=[
+                web_url,
+                cloudfront_url,
+                "http://localhost:5173",
+            ],
             allow_methods=[
                 apigwv2.CorsHttpMethod.GET,
                 apigwv2.CorsHttpMethod.POST,
@@ -307,6 +354,7 @@ class ParkingLotWebStack(Stack):
 
     # --- Outputs ---
     CfnOutput(self, "WebUrl", value=web_url)
+    CfnOutput(self, "CloudFrontUrl", value=cloudfront_url)
     CfnOutput(self, "TruthCaptureUrl", value="%s/truth" % web_url)
     CfnOutput(self, "ApiUrl", value=api_url)
     CfnOutput(self, "IdentityPoolId", value=identity_pool.ref)
