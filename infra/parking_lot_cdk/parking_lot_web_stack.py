@@ -253,12 +253,15 @@ class ParkingLotWebStack(Stack):
     control_fn.add_to_role_policy(
         iam.PolicyStatement(
             actions=["iot:Publish"],
-            resources=["%s:topic/parkinglot/%s/status" % (iot_arn, lot_id)],
+            resources=[
+                "%s:topic/parkinglot/%s/status" % (iot_arn, lot_id),
+                "%s:topic/parkinglot/%s/summary" % (iot_arn, lot_id),
+            ],
         )
     )
     control_fn.add_to_role_policy(
         iam.PolicyStatement(
-            actions=["iot:UpdateThingShadow"],
+            actions=["iot:GetThingShadow", "iot:UpdateThingShadow"],
             resources=_thing_shadow_iam_resources(iot_arn, thing_name, shadow_name),
         )
     )
