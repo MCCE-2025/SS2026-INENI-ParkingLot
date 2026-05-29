@@ -451,6 +451,7 @@ export function ParkingLotPage({ captureMode }: Props) {
       {!isTruth ? (
         <SparklineHistory
           items={history}
+          totalSpots={state.summary.total}
           loading={historyLoading}
           error={historyError}
         />

@@ -316,10 +316,31 @@ body {
 }
 
 .sparkline__svg {
+  display: block;
   width: 100%;
-  max-width: 320px;
+  min-height: 180px;
   height: auto;
   color: #2563eb;
+}
+
+.sparkline__axis {
+  stroke: #94a3b8;
+  stroke-width: 1;
+}
+
+.sparkline__grid {
+  stroke: #e2e8f0;
+  stroke-width: 1;
+}
+
+.sparkline__tick {
+  stroke: #94a3b8;
+  stroke-width: 1;
+}
+
+.sparkline__axis-label {
+  fill: #64748b;
+  font-size: 11px;
 }
 
 .sparkline__line--web {

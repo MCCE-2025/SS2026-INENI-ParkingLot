@@ -1,7 +1,7 @@
 import type { HistoryItem, StatusEvent } from "../types";
 import { eventTimeMs } from "./timestamp";
 
-const HISTORY_WINDOW_MS = 15 * 60 * 1000;
+export const HISTORY_WINDOW_MS = 15 * 60 * 1000;
 
 export function historyWindow(): { from: string; to: string } {
   const to = new Date();

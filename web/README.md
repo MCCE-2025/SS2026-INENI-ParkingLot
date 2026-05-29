@@ -8,7 +8,7 @@ React + Vite SPA for real-time occupancy. Deployed by `ParkingLotWebStack` (S3 +
 - **Spot grid** — click a spot to toggle occupied/free via `POST /control`; green = free, blue = occupied (matches the OpenCV overlay)
 - **Manual overrides** — spots updated from the dashboard show a **manual** badge and dashed outline (`source: "web"` in MQTT/DynamoDB)
 - **Ground truth capture** — open `/truth` on the same URL to label actual occupancy during testing (`source: "truth"` in DynamoDB; does not update Device Shadow)
-- **Sparkline** — last 15 minutes of occupancy; solid line = device events, dashed line = manual overrides
+- **Occupancy chart** — full-width 15-minute chart with time and occupancy % axes; solid line = device events, dashed line = manual overrides (per-source occupancy ratio over a fixed sliding window)
 - **Live MQTT** — subscribe-only WSS connection (SigV4 + Cognito); grid and history update on each status message
 
 ## Prerequisites
