@@ -330,7 +330,8 @@ Example `status` payload:
   "lot_id": "lot_1",
   "spot_id": 2,
   "occupied": true,
-  "ts": "2026-05-17T19:34:21Z",
+  "ts": "2026-05-17T19:34:21.123456Z",
+  "epoch": 1747517661123456,
   "device_id": "parking_lot_camera_01",
   "source": "device"
 }
@@ -476,7 +477,7 @@ aws dynamodb scan \
   --region eu-central-1
 ```
 
-Each row matches the MQTT `status` payload (`lot_id`, `ts`, `spot_id`, `occupied`, `device_id`, `source`). The initial occupancy snapshot and periodic summary heartbeats are **not** written to DynamoDB in this mode, matching what the cloud IoT rule persists today (only `parkinglot/+/status` events).
+Each row matches the MQTT `status` payload (`lot_id`, `ts`, `epoch`, `spot_id`, `occupied`, `device_id`, `source`). `ts` is the ISO-8601 UTC sort key (with fractional seconds); `epoch` is the same instant as microseconds since Unix epoch. The initial occupancy snapshot and periodic summary heartbeats are **not** written to DynamoDB in this mode, matching what the cloud IoT rule persists today (only `parkinglot/+/status` events).
 
 | Flag | Description |
 |------|-------------|

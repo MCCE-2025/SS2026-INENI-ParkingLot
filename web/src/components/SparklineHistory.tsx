@@ -1,3 +1,4 @@
+import { eventTimeMs } from "../lib/timestamp";
 import type { EventSource, HistoryItem } from "../types";
 
 interface Props {
@@ -19,7 +20,7 @@ export function bucketOccupancyInWindow(
 ): number[] {
   const msPerBucket = bucketMinutes * 60 * 1000;
   const parsed = items
-    .map((it) => ({ t: Date.parse(it.ts), occupied: it.occupied ? 1 : 0 }))
+    .map((it) => ({ t: eventTimeMs(it), occupied: it.occupied ? 1 : 0 }))
     .filter((p) => !Number.isNaN(p.t))
     .sort((a, b) => a.t - b.t);
 
@@ -45,7 +46,7 @@ export function bucketOccupancy(items: HistoryItem[], bucketMinutes = 1): number
     return [];
   }
   const parsed = items
-    .map((it) => Date.parse(it.ts))
+    .map((it) => eventTimeMs(it))
     .filter((t) => !Number.isNaN(t))
     .sort((a, b) => a - b);
   if (parsed.length === 0) {
@@ -67,7 +68,7 @@ function bucketBySource(
 
 function historyTimeBounds(items: HistoryItem[]): { start: number; end: number } | null {
   const times = items
-    .map((it) => Date.parse(it.ts))
+    .map((it) => eventTimeMs(it))
     .filter((t) => !Number.isNaN(t))
     .sort((a, b) => a - b);
   if (times.length === 0) {

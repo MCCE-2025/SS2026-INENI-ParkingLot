@@ -17,6 +17,7 @@ import time
 
 from awscrt import mqtt
 from awsiot import iotshadow, mqtt_connection_builder
+from timestamp import event_timestamps
 
 logger = logging.getLogger(__name__)
 
@@ -133,10 +134,6 @@ def build_iot_publisher(args, required=False):
     )
 
 
-def _utc_timestamp():
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
 def _summary_from_statuses(statuses):
     """Build {free, occupied, total} from detector statuses.
 
@@ -189,14 +186,16 @@ class IoTPublisher:
 
         self._shadow_client = iotshadow.IotShadowClient(self._connection)
 
-    def publish_spot(self, spot_id, occupied, statuses=None, ts=None):
+    def publish_spot(self, spot_id, occupied, statuses=None, ts=None, epoch=None):
         """Publish a confirmed spot state change (MQTT + shadow delta)."""
-        ts = ts or _utc_timestamp()
+        if ts is None or epoch is None:
+            ts, epoch = event_timestamps()
         payload = {
             "lot_id": self.lot_id,
             "spot_id": int(spot_id),
             "occupied": bool(occupied),
             "ts": ts,
+            "epoch": int(epoch),
             "device_id": self.client_id,
             "source": "device",
         }
@@ -225,7 +224,7 @@ class IoTPublisher:
             return
         self._initial_snapshot_sent = True
 
-        ts = _utc_timestamp()
+        ts, epoch = event_timestamps()
         spots = {}
         for index, status in enumerate(statuses):
             spots[str(index)] = {
@@ -255,7 +254,7 @@ class IoTPublisher:
             return
 
         self._last_summary_time = now
-        ts = _utc_timestamp()
+        ts, _epoch = event_timestamps()
         summary = _summary_from_statuses(statuses)
         payload = {
             "lot_id": self.lot_id,
