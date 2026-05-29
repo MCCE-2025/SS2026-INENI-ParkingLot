@@ -415,15 +415,23 @@ export function ParkingLotPage({ captureMode }: Props) {
         <div className="app__header-actions">
           <nav className="app__nav" aria-label="App sections">
             {isTruth ? (
-              <Link to="/">Dashboard</Link>
+              <Link to="/" className="app__nav-link">
+                Dashboard
+              </Link>
             ) : (
-              <Link to="/truth">Ground truth</Link>
+              <Link to="/truth" className="app__nav-link">
+                Ground truth
+              </Link>
             )}
             {!isTruth && !debugMode ? (
-              <Link to="/?debug=1">MQTT debug</Link>
+              <Link to="/?debug=1" className="app__nav-link">
+                MQTT debug
+              </Link>
             ) : null}
             {debugMode && !isTruth ? (
-              <Link to="/">Exit debug</Link>
+              <Link to="/" className="app__nav-link app__nav-link--active">
+                Exit debug
+              </Link>
             ) : null}
           </nav>
           <ConnectionPill connection={state.connection} />
