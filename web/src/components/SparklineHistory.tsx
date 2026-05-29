@@ -1,89 +1,58 @@
-import { eventTimeMs } from "../lib/timestamp";
-import type { EventSource, HistoryItem } from "../types";
+import { useEffect, useState } from "react";
+import { buildOccupancySeries, chartWindow } from "../lib/historyChart";
+import type { HistoryItem } from "../types";
 
 interface Props {
   items: HistoryItem[];
+  totalSpots: number;
   loading: boolean;
   error: string | null;
 }
 
-function itemSource(item: HistoryItem): EventSource {
-  return item.source ?? "device";
+const SVG_WIDTH = 640;
+const SVG_HEIGHT = 200;
+const MARGIN_LEFT = 40;
+const MARGIN_RIGHT = 12;
+const MARGIN_TOP = 12;
+const MARGIN_BOTTOM = 28;
+
+const CHART_WIDTH = SVG_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
+const CHART_HEIGHT = SVG_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM;
+const CHART_LEFT = MARGIN_LEFT;
+const CHART_TOP = MARGIN_TOP;
+const CHART_BOTTOM = MARGIN_TOP + CHART_HEIGHT;
+
+const Y_TICKS = [0, 0.5, 1];
+const X_TICK_MINUTES = [0, 5, 10, 15];
+
+function formatPercent(ratio: number): string {
+  return `${Math.round(ratio * 100)}%`;
 }
 
-/** Bucket status events into 1-minute occupancy ratios (0–1) on a fixed time window. */
-export function bucketOccupancyInWindow(
-  items: HistoryItem[],
-  startMs: number,
-  endMs: number,
-  bucketMinutes = 1,
-): number[] {
-  const msPerBucket = bucketMinutes * 60 * 1000;
-  const parsed = items
-    .map((it) => ({ t: eventTimeMs(it), occupied: it.occupied ? 1 : 0 }))
-    .filter((p) => !Number.isNaN(p.t))
-    .sort((a, b) => a.t - b.t);
-
-  const bucketCount = Math.max(1, Math.ceil((endMs - startMs) / msPerBucket) + 1);
-  const sums = new Array<number>(bucketCount).fill(0);
-  const counts = new Array<number>(bucketCount).fill(0);
-
-  for (const p of parsed) {
-    if (p.t < startMs || p.t > endMs) {
-      continue;
-    }
-    const idx = Math.min(bucketCount - 1, Math.floor((p.t - startMs) / msPerBucket));
-    sums[idx] += p.occupied;
-    counts[idx] += 1;
+function formatXLabel(minutesAgo: number): string {
+  if (minutesAgo === 0) {
+    return "now";
   }
-
-  return sums.map((s, i) => (counts[i] ? s / counts[i] : 0));
+  return `-${minutesAgo}m`;
 }
 
-/** Bucket status events into 1-minute occupancy ratios (0–1). */
-export function bucketOccupancy(items: HistoryItem[], bucketMinutes = 1): number[] {
-  if (items.length === 0) {
-    return [];
-  }
-  const parsed = items
-    .map((it) => eventTimeMs(it))
-    .filter((t) => !Number.isNaN(t))
-    .sort((a, b) => a - b);
-  if (parsed.length === 0) {
-    return [];
-  }
-  return bucketOccupancyInWindow(items, parsed[0], parsed[parsed.length - 1], bucketMinutes);
-}
-
-function bucketBySource(
-  items: HistoryItem[],
-  source: EventSource,
-  startMs: number,
-  endMs: number,
-  bucketMinutes = 1,
-): number[] {
-  const filtered = items.filter((it) => itemSource(it) === source);
-  return bucketOccupancyInWindow(filtered, startMs, endMs, bucketMinutes);
-}
-
-function historyTimeBounds(items: HistoryItem[]): { start: number; end: number } | null {
-  const times = items
-    .map((it) => eventTimeMs(it))
-    .filter((t) => !Number.isNaN(t))
-    .sort((a, b) => a - b);
-  if (times.length === 0) {
-    return null;
-  }
-  return { start: times[0], end: times[times.length - 1] };
-}
-
-function polylinePoints(values: number[], w: number, h: number, max: number): string {
-  if (values.length < 2) {
+function polylinePoints(
+  values: number[],
+  chartLeft: number,
+  chartTop: number,
+  chartWidth: number,
+  chartHeight: number,
+): string {
+  if (values.length === 0) {
     return "";
   }
-  const step = w / (values.length - 1);
+  const step = values.length > 1 ? chartWidth / (values.length - 1) : 0;
   return values
-    .map((v, i) => `${i * step},${h - (v / max) * (h - 4) - 2}`)
+    .map((v, i) => {
+      const x = chartLeft + i * step;
+      const y = chartTop + chartHeight - v * chartHeight;
+      return `${x},${y}`;
+    })
     .join(" ");
 }
 
@@ -102,46 +71,95 @@ function Legend() {
   );
 }
 
-function SparklineDual({
+function OccupancyChart({
   deviceValues,
   webValues,
 }: {
   deviceValues: number[];
   webValues: number[];
 }) {
-  const len = Math.max(deviceValues.length, webValues.length);
-  if (len < 2) {
-    return <p className="sparkline__empty">Not enough history for a chart.</p>;
-  }
-
-  const pad = (arr: number[], target: number): number[] => {
-    if (arr.length >= target) {
-      return arr;
-    }
-    return [...arr, ...new Array(target - arr.length).fill(0)];
-  };
-
-  const device = pad(deviceValues, len);
-  const web = pad(webValues, len);
-  const max = Math.max(...device, ...web, 0.01);
-  const w = 320;
-  const h = 48;
-
   return (
     <>
       <Legend />
       <svg
         className="sparkline__svg"
-        viewBox={`0 0 ${w} ${h}`}
+        viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
         role="img"
         aria-label="Occupancy history by source"
       >
+        {Y_TICKS.map((tick) => {
+          const y = CHART_TOP + CHART_HEIGHT - tick * CHART_HEIGHT;
+          return (
+            <g key={tick}>
+              <line
+                className="sparkline__grid"
+                x1={CHART_LEFT}
+                y1={y}
+                x2={CHART_LEFT + CHART_WIDTH}
+                y2={y}
+              />
+              <text
+                className="sparkline__axis-label"
+                x={CHART_LEFT - 6}
+                y={y + 4}
+                textAnchor="end"
+              >
+                {formatPercent(tick)}
+              </text>
+            </g>
+          );
+        })}
+
+        <line
+          className="sparkline__axis"
+          x1={CHART_LEFT}
+          y1={CHART_BOTTOM}
+          x2={CHART_LEFT + CHART_WIDTH}
+          y2={CHART_BOTTOM}
+        />
+        <line
+          className="sparkline__axis"
+          x1={CHART_LEFT}
+          y1={CHART_TOP}
+          x2={CHART_LEFT}
+          y2={CHART_BOTTOM}
+        />
+
+        {X_TICK_MINUTES.map((minutes) => {
+          const x = CHART_LEFT + (minutes / 15) * CHART_WIDTH;
+          return (
+            <g key={minutes}>
+              <line
+                className="sparkline__tick"
+                x1={x}
+                y1={CHART_BOTTOM}
+                x2={x}
+                y2={CHART_BOTTOM + 4}
+              />
+              <text
+                className="sparkline__axis-label"
+                x={x}
+                y={CHART_BOTTOM + 18}
+                textAnchor="middle"
+              >
+                {formatXLabel(15 - minutes)}
+              </text>
+            </g>
+          );
+        })}
+
         <polyline
           className="sparkline__line sparkline__line--device"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
-          points={polylinePoints(device, w, h, max)}
+          points={polylinePoints(
+            deviceValues,
+            CHART_LEFT,
+            CHART_TOP,
+            CHART_WIDTH,
+            CHART_HEIGHT,
+          )}
         />
         <polyline
           className="sparkline__line sparkline__line--web"
@@ -149,27 +167,41 @@ function SparklineDual({
           stroke="currentColor"
           strokeWidth="2"
           strokeDasharray="4 3"
-          points={polylinePoints(web, w, h, max)}
+          points={polylinePoints(
+            webValues,
+            CHART_LEFT,
+            CHART_TOP,
+            CHART_WIDTH,
+            CHART_HEIGHT,
+          )}
         />
       </svg>
     </>
   );
 }
 
-export function SparklineHistory({ items, loading, error }: Props) {
-  const bounds = historyTimeBounds(items);
-  const deviceBuckets =
-    bounds === null ? [] : bucketBySource(items, "device", bounds.start, bounds.end);
-  const webBuckets =
-    bounds === null ? [] : bucketBySource(items, "web", bounds.start, bounds.end);
+export function SparklineHistory({ items, totalSpots, loading, error }: Props) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const { start, end } = chartWindow(nowMs);
+  const deviceValues = buildOccupancySeries(items, "device", start, end, totalSpots);
+  const webValues = buildOccupancySeries(items, "web", start, end, totalSpots);
 
   return (
     <section className="sparkline" aria-label="Occupancy history">
-      <h2 className="sparkline__title">Last 15 minutes</h2>
+      <h2 className="sparkline__title">Occupancy - Last 15 minutes</h2>
       {loading ? <p className="sparkline__empty">Loading history…</p> : null}
       {error ? <p className="sparkline__error">{error}</p> : null}
-      {!loading && !error ? (
-        <SparklineDual deviceValues={deviceBuckets} webValues={webBuckets} />
+      {!loading && !error && totalSpots === 0 ? (
+        <p className="sparkline__empty">Waiting for occupancy data…</p>
+      ) : null}
+      {!loading && !error && totalSpots > 0 ? (
+        <OccupancyChart deviceValues={deviceValues} webValues={webValues} />
       ) : null}
     </section>
   );

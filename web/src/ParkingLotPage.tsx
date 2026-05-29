@@ -5,6 +5,7 @@ import { MqttConsole } from "./components/MqttConsole";
 import { SparklineHistory } from "./components/SparklineHistory";
 import { SpotGrid } from "./components/SpotGrid";
 import { SummaryTiles } from "./components/SummaryTiles";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { getHistory, getSnapshot, postControl } from "./lib/api";
 import { getCognitoCredentials } from "./lib/cognito";
 import { loadConfig } from "./lib/config";
@@ -413,6 +414,7 @@ export function ParkingLotPage({ captureMode }: Props) {
           </p>
         </div>
         <div className="app__header-actions">
+          <ThemeToggle />
           <nav className="app__nav" aria-label="App sections">
             {isTruth ? (
               <Link to="/" className="app__nav-link">
@@ -451,6 +453,7 @@ export function ParkingLotPage({ captureMode }: Props) {
       {!isTruth ? (
         <SparklineHistory
           items={history}
+          totalSpots={state.summary.total}
           loading={historyLoading}
           error={historyError}
         />
