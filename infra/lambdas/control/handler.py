@@ -42,6 +42,31 @@ def _parse_body(event):
     return json.loads(raw)
 
 
+def _summary_from_spots(spots):
+    total = len(spots)
+    occupied = sum(1 for spot in spots.values() if spot.get("occupied"))
+    return {"free": total - occupied, "occupied": occupied, "total": total}
+
+
+def _get_reported_spots(client, thing_name, shadow_name):
+    kwargs = {"thingName": thing_name}
+    if shadow_name:
+        kwargs["shadowName"] = shadow_name
+    try:
+        payload = client.get_thing_shadow(**kwargs)["payload"].read()
+        doc = json.loads(payload.decode("utf-8"))
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in ("ResourceNotFoundException", "404"):
+            return {}
+        raise
+    reported = doc.get("state", {}).get("reported", {})
+    spots = reported.get("spots")
+    if not isinstance(spots, dict):
+        return {}
+    return spots
+
+
 def _validate_body(body):
     if not isinstance(body, dict):
         return None, "Request body must be a JSON object"
@@ -124,12 +149,51 @@ def handler(event, context):
         )
 
     if source == "web":
+        try:
+            spots = _get_reported_spots(client, thing_name, shadow_name)
+        except ClientError as exc:
+            return _response(
+                500,
+                {
+                    "error": "Published status but failed to read shadow",
+                    "code": exc.response.get("Error", {}).get("Code", ""),
+                },
+            )
+
+        spots = dict(spots)
+        spots[str(spot_id)] = {"occupied": occupied, "ts": ts, "source": "web"}
+        summary = _summary_from_spots(spots)
+
+        summary_payload = {
+            "lot_id": lot_id,
+            "device_id": device_id,
+            "ts": ts,
+            **summary,
+        }
+        summary_topic = "parkinglot/%s/summary" % lot_id
+
+        try:
+            client.publish(
+                topic=summary_topic,
+                qos=1,
+                payload=json.dumps(summary_payload),
+            )
+        except ClientError as exc:
+            return _response(
+                500,
+                {
+                    "error": "Published status but failed to publish summary",
+                    "code": exc.response.get("Error", {}).get("Code", ""),
+                },
+            )
+
         shadow_reported = {
             "lot_id": lot_id,
             "device_id": device_id,
             "spots": {
                 str(spot_id): {"occupied": occupied, "ts": ts, "source": "web"},
             },
+            "summary": summary,
             "ts": ts,
         }
         shadow_payload = json.dumps({"state": {"reported": shadow_reported}})
@@ -143,7 +207,7 @@ def handler(event, context):
             return _response(
                 500,
                 {
-                    "error": "Published status but failed to update shadow",
+                    "error": "Published status and summary but failed to update shadow",
                     "code": exc.response.get("Error", {}).get("Code", ""),
                 },
             )

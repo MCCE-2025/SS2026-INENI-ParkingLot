@@ -90,14 +90,21 @@ export function applySummary(
   if (event.lot_id !== state.lotId) {
     return state;
   }
+  const derived = computeSummary(state.spots);
+  const eventSummary = {
+    free: event.free,
+    occupied: event.occupied,
+    total: event.total,
+  };
+  const matchesSpots =
+    derived.total === 0 ||
+    (derived.free === eventSummary.free &&
+      derived.occupied === eventSummary.occupied &&
+      derived.total === eventSummary.total);
   return {
     ...state,
     deviceId: event.device_id || state.deviceId,
-    summary: {
-      free: event.free,
-      occupied: event.occupied,
-      total: event.total,
-    },
+    summary: matchesSpots ? eventSummary : derived,
     lastUpdated: event.ts,
     connection: "connected",
     error: null,
