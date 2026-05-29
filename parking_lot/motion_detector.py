@@ -4,6 +4,7 @@ import time
 import cv2 as open_cv
 import numpy as np
 from colors import COLOR_BLUE, COLOR_GREEN, COLOR_WHITE
+from display_window import setup_display_window
 from drawing_utils import draw_contours
 from webcam_controls import apply_controls
 
@@ -99,6 +100,7 @@ class MotionDetector:
         statuses = [False] * len(coordinates_data)
         times = [None] * len(coordinates_data)
         initial_snapshot_sent = False
+        window_initialized = False
 
         empty_frames = 0
         max_empty_frames = 30  # ~1–2 seconds of dropped reads on a webcam
@@ -179,6 +181,11 @@ class MotionDetector:
 
             if self.publisher is not None:
                 self.publisher.publish_summary_if_due(statuses, time.time())
+
+            if not window_initialized:
+                frame_h, frame_w = new_frame.shape[:2]
+                setup_display_window(self.window_name, frame_w, frame_h)
+                window_initialized = True
 
             open_cv.imshow(self.window_name, new_frame)
             k = open_cv.waitKey(1)
