@@ -52,6 +52,7 @@ Tunable values live in `cdk.json` → `context`:
 | `lot_id` | `lot_1` |
 | `shadow_name` | `occupancy` |
 | `events_table_name` | `ParkingLotEvents` |
+| `web_domain_name` | `parkinglot.werschlan.at` (omit or set to `""` to disable custom domain) |
 
 ## Fetch device certificates
 
@@ -88,6 +89,7 @@ single-line command. See the root [`README.md`](../README.md) simulator section.
 `ParkingLotWebStack` (registered in `app.py` alongside `ParkingLotStack`) provisions:
 
 - S3 + CloudFront SPA hosting
+- Optional custom domain via `ParkingLotDnsStack` (Route 53 hosted zone + ACM cert in `us-east-1`)
 - Cognito Identity Pool (unauthenticated) with **read-only** IoT subscribe policy
 - HTTP API:
   - `GET /snapshot` — GetSnapshot Lambda (Device Shadow, DynamoDB fallback)
@@ -103,14 +105,22 @@ Deploy after building the frontend:
 uv run python scripts/deploy_web.py
 ```
 
+When `web_domain_name` is set in `cdk.json`, this deploys **`ParkingLotDnsStack`** (us-east-1) and **`ParkingLotWebStack`**. Bootstrap us-east-1 once if needed:
+
+```bash
+cdk bootstrap aws://$CDK_DEFAULT_ACCOUNT/us-east-1
+```
+
+After the first DNS stack deploy, copy the **`NameServers`** output and create NS records for the subdomain at the parent zone (`werschlan.at`). Wait for delegation and ACM validation, then redeploy. Use `--skip-dns` on later runs if only the web stack changed.
+
 Or manually:
 
 ```bash
 cd ../web && npm install && npm run build
-cd ../infra && cdk deploy ParkingLotWebStack
+cd ../infra && cdk deploy ParkingLotDnsStack ParkingLotWebStack
 ```
 
-Outputs: `WebUrl`, `ApiUrl`, `IdentityPoolId`.
+Outputs: `WebUrl`, `CloudFrontUrl`, `ApiUrl`, `IdentityPoolId` (plus `NameServers` from the DNS stack).
 
 ## Teardown
 

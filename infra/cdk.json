@@ -17,6 +17,7 @@
     "lot_id": "lot_1",
     "shadow_name": "occupancy",
     "events_table_name": "ParkingLotEvents",
+    "web_domain_name": "parkinglot.werschlan.at",
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true
   }

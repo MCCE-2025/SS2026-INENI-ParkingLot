@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the web SPA and deploy ParkingLotWebStack."""
+"""Build the web SPA and deploy ParkingLotDnsStack + ParkingLotWebStack."""
 
 import argparse
 import subprocess
@@ -10,9 +10,9 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--stack",
-        default="ParkingLotWebStack",
-        help="CDK stack name to deploy (default: ParkingLotWebStack)",
+        "--skip-dns",
+        action="store_true",
+        help="Skip ParkingLotDnsStack (use after subdomain NS delegation is in place)",
     )
     args = parser.parse_args()
 
@@ -30,12 +30,14 @@ def main():
         print("error: web/dist not found after build", file=sys.stderr)
         sys.exit(1)
 
-    print("==> cdk deploy %s" % args.stack)
-    subprocess.run(
-        ["uv", "run", "cdk", "deploy", args.stack, "--require-approval", "never"],
-        cwd=infra_dir,
-        check=True,
-    )
+    deploy_cmd = ["npx", "aws-cdk", "deploy", "--require-approval", "never"]
+    if args.skip_dns:
+        deploy_cmd.append("ParkingLotWebStack")
+    else:
+        deploy_cmd.extend(["ParkingLotDnsStack", "ParkingLotWebStack"])
+
+    print("==> cdk deploy %s" % " ".join(deploy_cmd[3:]))
+    subprocess.run(deploy_cmd, cwd=infra_dir, check=True)
 
 
 if __name__ == "__main__":
