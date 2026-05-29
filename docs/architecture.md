@@ -151,7 +151,8 @@ Every `parkinglot/<lot_id>/status` message (device or web) includes:
 | `lot_id` | `lot_1` | `lot_1` |
 | `spot_id` | `2` | `2` |
 | `occupied` | `true` | `false` |
-| `ts` | ISO 8601 UTC | ISO 8601 UTC |
+| `ts` | ISO 8601 UTC (fractional seconds) | ISO 8601 UTC (fractional seconds) |
+| `epoch` | Microseconds since Unix epoch (`N`) | Microseconds since Unix epoch (`N`) |
 | `device_id` | `parking_lot_camera_01` | `web_control` |
 | `source` | `device` | `web` |
 

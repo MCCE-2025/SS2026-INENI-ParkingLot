@@ -263,7 +263,7 @@ class ParkingLotStack(Stack):
             rule_name="ParkingLotStatusToDynamoDB",
             topic_rule_payload=iot.CfnTopicRule.TopicRulePayloadProperty(
                 sql=(
-                    "SELECT *, topic(2) as lot_id, spot_id, occupied, ts "
+                    "SELECT *, topic(2) as lot_id, spot_id, occupied, ts, epoch "
                     "FROM 'parkinglot/+/status'"
                 ),
                 aws_iot_sql_version="2016-03-23",

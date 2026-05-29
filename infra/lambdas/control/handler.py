@@ -3,19 +3,16 @@
 import base64
 import json
 import os
-from datetime import datetime, timezone
 
 import boto3
 from botocore.exceptions import ClientError
+
+from _timestamps import event_timestamps
 
 _CORS = {
     "content-type": "application/json",
     "access-control-allow-origin": "*",
 }
-
-
-def _utc_now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _iot_data_client():
@@ -96,13 +93,14 @@ def handler(event, context):
 
     spot_id = validated["spot_id"]
     occupied = validated["occupied"]
-    ts = _utc_now()
+    ts, epoch = event_timestamps()
 
     status_payload = {
         "lot_id": lot_id,
         "spot_id": spot_id,
         "occupied": occupied,
         "ts": ts,
+        "epoch": int(epoch),
         "device_id": device_id,
         "source": source,
     }

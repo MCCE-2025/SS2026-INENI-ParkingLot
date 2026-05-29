@@ -19,13 +19,13 @@ class _DecimalEncoder(json.JSONEncoder):
 
 
 def _iso_now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _default_from():
     return (
         datetime.now(timezone.utc) - timedelta(hours=1)
-    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def handler(event, context):

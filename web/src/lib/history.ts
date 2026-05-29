@@ -1,4 +1,5 @@
 import type { HistoryItem, StatusEvent } from "../types";
+import { eventTimeMs } from "./timestamp";
 
 const HISTORY_WINDOW_MS = 15 * 60 * 1000;
 
@@ -6,13 +7,13 @@ export function historyWindow(): { from: string; to: string } {
   const to = new Date();
   const from = new Date(to.getTime() - HISTORY_WINDOW_MS);
   return {
-    from: from.toISOString().replace(/\.\d{3}Z$/, "Z"),
-    to: to.toISOString().replace(/\.\d{3}Z$/, "Z"),
+    from: from.toISOString(),
+    to: to.toISOString(),
   };
 }
 
-function itemKey(item: Pick<HistoryItem, "spot_id" | "ts">): string {
-  return `${item.spot_id}-${item.ts}`;
+function itemKey(item: Pick<HistoryItem, "spot_id" | "ts" | "epoch">): string {
+  return `${item.spot_id}-${item.ts}-${item.epoch ?? ""}`;
 }
 
 /** Append a status event and keep only items within the history window. */
@@ -25,6 +26,7 @@ export function appendHistoryItem(
     spot_id: event.spot_id,
     occupied: event.occupied,
     ts: event.ts,
+    epoch: event.epoch,
     device_id: event.device_id,
     source: event.source ?? "device",
   };
@@ -37,8 +39,8 @@ export function appendHistoryItem(
   const cutoff = Date.now() - HISTORY_WINDOW_MS;
   return [...items, item]
     .filter((i) => {
-      const t = Date.parse(i.ts);
+      const t = eventTimeMs(i);
       return !Number.isNaN(t) && t >= cutoff;
     })
-    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+    .sort((a, b) => eventTimeMs(a) - eventTimeMs(b));
 }

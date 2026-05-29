@@ -37,6 +37,8 @@ export interface StatusEvent {
   spot_id: number;
   occupied: boolean;
   ts: string;
+  /** Microseconds since Unix epoch (DynamoDB attribute; optional on live MQTT). */
+  epoch?: number;
   device_id: string;
   source?: EventSource;
 }
@@ -55,6 +57,8 @@ export interface HistoryItem {
   spot_id: number;
   occupied: boolean;
   ts: string;
+  /** Microseconds since Unix epoch when present (from DynamoDB). */
+  epoch?: number;
   device_id?: string;
   source?: EventSource;
 }

@@ -30,7 +30,7 @@ def _empty_shadow(lot_id, device_id=""):
 
 
 def _utc_now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _iot_data_client():
@@ -55,7 +55,7 @@ def _snapshot_from_dynamodb(table_name, lot_id, device_id):
     to_ts = _utc_now()
     from_ts = (
         datetime.now(timezone.utc) - timedelta(hours=24)
-    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
     spots = {}
     latest_ts = to_ts

@@ -6,9 +6,9 @@ Intended for local testing against DynamoDB Local without AWS IoT Core.
 """
 
 import logging
-import time
 
 import boto3
+from timestamp import event_timestamps
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
@@ -95,10 +95,6 @@ def build_dynamodb_publisher(args, required=False):
     )
 
 
-def _utc_timestamp():
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
 def _create_table_hint(table_name, region):
     return (
         "aws dynamodb create-table \\\n"
@@ -157,12 +153,14 @@ class DynamodbPublisher:
             endpoint_url,
         )
 
-    def publish_spot(self, spot_id, occupied, statuses=None, ts=None):
+    def publish_spot(self, spot_id, occupied, statuses=None, ts=None, epoch=None):
         """Persist one status event (same fields as MQTT status payload)."""
-        ts = ts or _utc_timestamp()
+        if ts is None or epoch is None:
+            ts, epoch = event_timestamps()
         item = {
             "lot_id": self.lot_id,
             "ts": ts,
+            "epoch": int(epoch),
             "spot_id": int(spot_id),
             "occupied": bool(occupied),
             "device_id": self.device_id,
