@@ -143,6 +143,7 @@ Never commit: `certs/`, `*.pem`, `*.key`, `*.crt`, `.venv/`, `infra/cdk.out/`, `
 - **Web deploy order:** `npm run build` in `web/` must complete before `cdk deploy ParkingLotWebStack` (or use `infra/scripts/deploy_web.py`).
 - **Tests:** `parking_lot/tests/` is minimal; prefer not to add heavy test harnesses unless asked.
 - **Commits:** Only commit when the user explicitly requests it.
+- **Conventional Commits:** Commit messages and PR titles must follow [Conventional Commits](https://www.conventionalcommits.org/) (`type(scope): description`, e.g. `feat(iot): add shadow snapshot endpoint`). Use standard types (`feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `build`, `perf`); append `!` or a `BREAKING CHANGE:` footer for breaking changes.
 
 ## Common tasks
 
