@@ -9,8 +9,8 @@ from diagrams import Diagram, Cluster, Edge
 from diagrams.aws.compute import Lambda
 from diagrams.aws.database import DynamodbTable
 from diagrams.aws.iot import IotRule, IotShadow, IotMqtt, IotCamera, IotSimulator
-from diagrams.aws.network import CloudFront, APIGateway
-from diagrams.aws.security import Cognito, SecretsManager
+from diagrams.aws.network import CloudFront, APIGateway, Route53
+from diagrams.aws.security import Cognito, SecretsManager, CertificateManager
 from diagrams.aws.storage import S3
 from diagrams.onprem.client import User
 from diagrams.generic.os import Raspbian
@@ -80,13 +80,19 @@ with Diagram(
             apigw    = APIGateway("HTTP API\n(API Gateway v2)")
             snap_fn  = Lambda("GetSnapshot\n(shadow + DDB fallback)")
             hist_fn  = Lambda("GetHistory\n(DDB time-range query)")
-            ctrl_fn  = Lambda("Control\n(source: web\nMQTT + shadow)")
+            ctrl_fn  = Lambda("Control\n(source: web | truth\nMQTT + summary + shadow)")
 
         # ── Web stack — Hosting ───────────────────────────────────────────────
         with Cluster("Static Hosting  (ParkingLotWebStack)"):
             cf = CloudFront("CloudFront CDN")
             s3 = S3("S3 Bucket\n(React SPA)")
             cf >> EDGE_PLAIN >> s3
+
+        # ── DNS & TLS (optional custom domain) ────────────────────────────────
+        with Cluster("DNS & TLS  (ParkingLotDnsStack · us-east-1)"):
+            zone = Route53("Public Hosted Zone\n(web_domain_name)")
+            acm  = CertificateManager("ACM Certificate\n(DNS validated)")
+            zone >> Edge(color="#555555", style="dotted", label="validation") >> acm
 
     # ── Edges — Device → IoT Core ─────────────────────────────────────────────
     detector >> Edge(color="#1a9c3e", style="bold",
@@ -115,8 +121,15 @@ with Diagram(
                      label="fallback Query")     >> ddb
     hist_fn  >> EDGE_QUERY                        >> ddb
     ctrl_fn  >> Edge(color="#1a9c3e", style="bold",
-                     label="Publish\nsource: web") >> broker
-    ctrl_fn  >> EDGE_SHADOW                       >> shadow
+                     label="Publish status\nsource: web | truth") >> broker
+    ctrl_fn  >> Edge(color="#1a9c3e", style="solid",
+                     label="republish summary\n(web only)")        >> broker
+    ctrl_fn  >> Edge(color="#1a9c3e", style="dashed",
+                     label="shadow update\n(web only)")            >> shadow
+
+    # ── Edges — DNS & TLS → CloudFront ────────────────────────────────────────
+    acm  >> Edge(color="#d13212", style="dotted", label="viewer cert") >> cf
+    zone >> Edge(color="#555555", style="solid",  label="alias A record") >> cf
 
     # ── Edges — Browser ───────────────────────────────────────────────────────
     browser >> EDGE_HTTP  >> cf

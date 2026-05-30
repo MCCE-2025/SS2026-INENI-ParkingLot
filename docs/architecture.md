@@ -40,11 +40,18 @@ flowchart TB
             BROKER <-->|shadow updates / reads| SHADOW
         end
 
+        subgraph DNS_STACK["ParkingLotDnsStack  (CDK · us-east-1 · optional)"]
+            direction TB
+            ZONE["Route 53\nPublic Hosted Zone\n(web_domain_name)"]
+            ACM["ACM Certificate\n(DNS validated)"]
+            ZONE -->|validation| ACM
+        end
+
         subgraph WEB_STACK["ParkingLotWebStack  (CDK)"]
             direction TB
 
             subgraph HOSTING["Static Hosting"]
-                CF["CloudFront CDN"]
+                CF["CloudFront CDN\n(custom domain when configured)"]
                 S3["S3 Bucket\n(React SPA dist/)"]
                 CF -->|Origin Access Control| S3
             end
@@ -54,43 +61,59 @@ flowchart TB
             subgraph API["HTTP API  (API Gateway v2)"]
                 SNAP["GET /snapshot\nGetSnapshot Lambda\n(Device Shadow → DynamoDB fallback)"]
                 HIST["GET /history\nGetHistory Lambda\n(1-hour DynamoDB query)"]
-                CTRL["POST /control\nControl Lambda\n(MQTT publish + shadow update)"]
+                CTRL["POST /control\nControl Lambda\n(source: web | truth\nMQTT status + summary + shadow)"]
             end
 
             SNAP -->|GetThingShadow| SHADOW
             SNAP -->|fallback Query| DDB
             HIST -->|Query by lot_id + ts range| DDB
-            CTRL -->|Publish parkinglot/lot_id/status| BROKER
-            CTRL -->|UpdateThingShadow| SHADOW
+            CTRL -->|Publish status parkinglot/lot_id/status| BROKER
+            CTRL -->|"republish summary (web only)"| BROKER
+            CTRL -->|"UpdateThingShadow (web only)"| SHADOW
         end
+
+        ACM -.->|viewer certificate| CF
+        ZONE -.->|alias A record| CF
     end
 
     %% ── BROWSER ──────────────────────────────────────────────────────────────
-    subgraph BROWSER["Browser  (React SPA · Vite)"]
+    subgraph BROWSER["Browser  (React SPA · Vite · React Router)"]
         direction TB
+
+        ROUTER["App.tsx\nRouter: / (web) · /truth (ground truth)"]
+        THEME["ThemeProvider · ThemeToggle\n(light / dark / system)"]
 
         subgraph LIBS["lib/"]
             COGN_LIB["cognito.ts\nGetId · GetCredentials"]
             SIGV4["sigv4.ts\nSigV4 presigned WSS URL"]
             MQTT_LIB["mqtt.ts\nMQTT.js over WSS"]
             API_LIB["api.ts\nHTTP fetch client"]
+            STATE_LIB["state.ts\nreducer: snapshot / status / summary"]
+            HIST_LIB["history.ts · historyChart.ts\n15-min window + occupancy series"]
+            LOG_LIB["mqttLog.ts\ndebug log buffer"]
         end
 
-        APP["App.tsx\n(state reducer)"]
+        PAGE["ParkingLotPage.tsx\n(orchestrator · useReducer)\ncaptureMode: web | truth"]
 
         subgraph UI["Components"]
             TILES["SummaryTiles\nfree / occupied counts"]
             GRID["SpotGrid\nclick to toggle · manual badge\n(green = free · blue = occupied)"]
-            SPARK["SparklineHistory\n15-min chart\ndevice + manual lines"]
-            PILL["ConnectionPill\nMQTT status badge"]
+            SPARK["SparklineHistory\nfull-width occupancy %\ndevice (solid) + manual (dashed)"]
+            PILL["ConnectionPill\nconnection state badge"]
+            CONSOLE["MqttConsole\n(debug mode ?debug=1)\nlive log · disconnect / reconnect"]
         end
 
         COGN_LIB --> SIGV4
         SIGV4 --> MQTT_LIB
-        APP --> COGN_LIB
-        APP --> MQTT_LIB
-        APP --> API_LIB
-        APP --> UI
+        ROUTER --> PAGE
+        ROUTER --> THEME
+        PAGE --> COGN_LIB
+        PAGE --> MQTT_LIB
+        PAGE --> API_LIB
+        PAGE --> STATE_LIB
+        PAGE --> HIST_LIB
+        PAGE --> LOG_LIB
+        PAGE --> UI
     end
 
     %% ── CROSS-BOUNDARY CONNECTIONS ───────────────────────────────────────────
@@ -101,7 +124,7 @@ flowchart TB
     COGN_LIB -->|GetId · GetCredentialsForIdentity| COGNITO
     MQTT_LIB -->|"SigV4 presigned WSS\nport 443\nSubscribe: parkinglot/#"| BROKER
     API_LIB -->|"GET /snapshot\nGET /history\nPOST /control"| API
-    GRID -->|"POST spot_id, occupied"| API_LIB
+    GRID -->|"POST spot_id, occupied, source"| API_LIB
 
     %% ── STYLING ──────────────────────────────────────────────────────────────
     classDef aws      fill:#FF9900,color:#000,stroke:#c47700
@@ -114,11 +137,11 @@ flowchart TB
 
     class BROKER,SHADOW,RULE iot
     class DDB dynamo
-    class CF,S3,COGNITO,API aws
+    class CF,S3,COGNITO,API,ZONE,ACM aws
     class SNAP,HIST,CTRL,CERT_LAMBDA lambda
     class SM aws
     class CAM,MD,SIM,IOT_PUB,DDB_PUB device
-    class APP,COGN_LIB,SIGV4,MQTT_LIB,API_LIB,TILES,GRID,SPARK,PILL browser
+    class ROUTER,PAGE,THEME,COGN_LIB,SIGV4,MQTT_LIB,API_LIB,STATE_LIB,HIST_LIB,LOG_LIB,TILES,GRID,SPARK,PILL,CONSOLE browser
 ```
 
 ## Component Overview
@@ -133,40 +156,45 @@ flowchart TB
 | **IoT Core** | Topic Rule | Fans per-spot status messages into DynamoDB via a DynamoDBv2 action |
 | **DynamoDB** | ParkingLotEvents | Time-series event log (PK: `lot_id`, SK: `ts`) with TTL for auto-expiry |
 | **Lambda** | GetSnapshot | Returns Device Shadow; falls back to DynamoDB reconstruction if shadow unavailable |
-| **Lambda** | GetHistory | Queries DynamoDB for a time window to bootstrap the sparkline (default 1 hour in Lambda; UI queries 15 minutes) |
-| **Lambda** | Control | Manual overrides: publishes `source: "web"` to `parkinglot/<lot_id>/status` and updates the Device Shadow (`device_id: web_control`) |
+| **Lambda** | GetHistory | Queries DynamoDB for a time window to bootstrap the chart (default 1 hour in Lambda; UI queries 15 minutes) |
+| **Lambda** | Control | Manual overrides: publishes to `parkinglot/<lot_id>/status` with `source: "web"` (`device_id: web_control`) or `source: "truth"` (`device_id: truth_capture`). For `web` it also republishes the summary and updates the Device Shadow; `truth` only publishes status (no summary/shadow) |
 | **Cognito** | Identity Pool | Issues temporary AWS credentials to anonymous browser users |
-| **CloudFront + S3** | Static Hosting | Serves the React SPA globally with OAC-protected S3 origin |
-| **Browser** | React SPA | Displays live spot grid, summary tiles, and sparkline via MQTT + HTTP API |
+| **CloudFront + S3** | Static Hosting | Serves the React SPA globally with OAC-protected S3 origin; optional custom domain |
+| **Route 53 + ACM** | DNS & TLS (ParkingLotDnsStack) | Optional: public hosted zone + DNS-validated certificate (us-east-1) for a custom CloudFront domain; only created when `web_domain_name` context is set |
+| **Browser** | React SPA | React Router app; `/` is the live dashboard and `/truth` is ground-truth capture. Supports light/dark/system theme |
+| **Browser** | ParkingLotPage | Orchestrator (`useReducer`): loads config + snapshot, subscribes to MQTT, handles spot toggles. `captureMode` is `web` or `truth` |
 | **Browser** | mqtt.ts | MQTT.js over SigV4-presigned WSS — subscribes to live status + summary topics (read-only) |
-| **Browser** | SpotGrid | Click a spot → `POST /control`; manual spots show badge when `source === "web"` |
-| **Browser** | SparklineHistory | Dual series: device (solid) vs manual (dashed); history appended on each status event |
+| **Browser** | SpotGrid | Click a spot → `POST /control`; manual spots show badge when `source === "web"` (or `"truth"` in capture mode) |
+| **Browser** | SparklineHistory | Full-width occupancy-percentage chart over the last 15 minutes; dual series device (solid) vs manual (dashed) |
+| **Browser** | MqttConsole | Debug-only (`?debug=1`): live MQTT message log with filters, pause, and manual disconnect/reconnect controls |
+| **Browser** | ThemeToggle | Light / dark / system theme selector backed by `ThemeProvider` and `localStorage` |
 
 ## Status event shape
 
-Every `parkinglot/<lot_id>/status` message (device or web) includes:
+Every `parkinglot/<lot_id>/status` message (device, web, or truth) includes:
 
-| Field | Device example | Web (manual) example |
-|-------|----------------|----------------------|
-| `lot_id` | `lot_1` | `lot_1` |
-| `spot_id` | `2` | `2` |
-| `occupied` | `true` | `false` |
-| `ts` | ISO 8601 UTC (fractional seconds) | ISO 8601 UTC (fractional seconds) |
-| `epoch` | Microseconds since Unix epoch (`N`) | Microseconds since Unix epoch (`N`) |
-| `device_id` | `parking_lot_camera_01` | `web_control` |
-| `source` | `device` | `web` |
+| Field | Device example | Web (manual) example | Ground truth example |
+|-------|----------------|----------------------|----------------------|
+| `lot_id` | `lot_1` | `lot_1` | `lot_1` |
+| `spot_id` | `2` | `2` | `2` |
+| `occupied` | `true` | `false` | `true` |
+| `ts` | ISO 8601 UTC (fractional seconds) | ISO 8601 UTC (fractional seconds) | ISO 8601 UTC (fractional seconds) |
+| `epoch` | Microseconds since Unix epoch (`N`) | Microseconds since Unix epoch (`N`) | Microseconds since Unix epoch (`N`) |
+| `device_id` | `parking_lot_camera_01` | `web_control` | `truth_capture` |
+| `source` | `device` | `web` | `truth` |
 
-The topic rule `SELECT *` writes all fields to DynamoDB. Per-spot entries in the Device Shadow also carry `source` when updated.
+The topic rule `SELECT *` writes all fields to DynamoDB. Per-spot entries in the Device Shadow also carry `source` when updated. Ground-truth rows (`source: "truth"`) are written to DynamoDB for labelling but do **not** update the live Device Shadow or summary.
 
 ## Key Data Flows
 
 ```
 Device (source: device) → IoT Core → DynamoDB     (event log via Topic Rule)
-Device → IoT Core Device Shadow                     (latest snapshot)
+Device → IoT Core Device Shadow                     (latest snapshot + periodic summary)
 Browser → Cognito → SigV4 → MQTT WSS               (subscribe-only live updates)
 Browser → GET /snapshot, /history → Lambda          (initial load)
-Browser → POST /control → Control Lambda            (source: web → MQTT + Shadow)
-Control → MQTT → Topic Rule → DynamoDB              (manual rows with source: web)
-Control → MQTT → browsers                           (grid + sparkline via applyStatus)
-Browser appends status events to local history       (sparkline updates without refetch)
+Browser (/) → POST /control → Control Lambda        (source: web → MQTT status + summary + Shadow)
+Browser (/truth) → POST /control → Control Lambda   (source: truth → MQTT status only, no Shadow/summary)
+Control → MQTT → Topic Rule → DynamoDB              (manual/truth rows, source: web | truth)
+Control → MQTT → browsers                           (grid + chart via applyStatus; /truth filters source: truth)
+Browser appends status events to local history       (chart updates without refetch)
 ```
